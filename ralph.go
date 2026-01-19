@@ -148,42 +148,115 @@ func loadConfig(logger *Logger) (*Config, error) {
 	return &config, nil
 }
 
-// promptForReply waits for a webhook reply from the server and processes it
-func parseReply(logger *Logger, config Config, resp *http.Response) (string, error) {
-	if !config.ParseReply {
-		return "", nil
+// processWebhookResponse processes a webhook response by sending it to opencode to create a task list
+func processWebhookResponse(logger *Logger, config Config, response string) error {
+	if strings.TrimSpace(response) == "" {
+		logger.Debug("Empty webhook response, skipping processing")
+		return nil
 	}
 
-	if config.WebhookURL == "" {
-		return "", fmt.Errorf("webhook URL is required when waiting for reply")
-	}
-
-	logger.Info("Waiting for webhook reply from server...")
-
-	// Wait for webhook reply by polling a response endpoint
-	// We'll look for a response file or implement a webhook receiver
-	respdata, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-
-	response := strings.TrimSpace(string(respdata))
-	if response == "" {
-		return "", nil
-	}
-
-	logger.Info("Received webhook reply: %s", response)
+	logger.Info("Processing webhook response: %s", response)
 
 	// If configured to add to tasks.md
 	if config.AddToTasks {
 		if err := addToTasks(logger, response); err != nil {
-			logger.Warn("Failed to add response to tasks.md: %v", err)
+			logger.Warn("Failed to add webhook response to tasks.md: %v", err)
+			return err
 		}
 	}
 
-	return response, nil
+	return nil
 }
 
-// addToTasks adds a response to the tasks.md file
+// addToTasks adds a response to the tasks.md file using opencode for processing
 func addToTasks(logger *Logger, response string) error {
+	// If response is empty, skip processing
+	if strings.TrimSpace(response) == "" {
+		logger.Debug("Empty response, skipping task addition")
+		return nil
+	}
+
+	// Use opencode to process the webhook response into a formatted task list
+	logger.Info("Processing webhook response with opencode to create task list...")
+
+	// Create opencode prompt for task processing
+	opencodePrompt := fmt.Sprintf(`Process the following webhook response and extract/create a proper task list. 
+The response may contain new tasks, feedback, or requirements. Convert them into a clean, organized task list format.
+
+Webhook Response:
+%s
+
+Requirements:
+1. Extract individual tasks from the response
+2. Format each task as a markdown list item starting with "- "
+3. Make tasks specific and actionable
+4. Remove any duplicate or irrelevant content
+5. If no clear tasks are found, respond with "No tasks found"
+6. Output ONLY the task list, no explanations
+
+Example output format:
+- Implement user authentication system
+- Add API endpoint for user registration
+- Create login form component
+`, response)
+
+	// Build the opencode command
+	args := []string{"run", "--model", "opencode/big-pickle"}
+	cmd := exec.Command("opencode", args...)
+	cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
+
+	// Provide the prompt via stdin
+	cmd.Stdin = strings.NewReader(opencodePrompt)
+
+	// Capture the output
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	// Run the command
+	err := cmd.Run()
+	if err != nil {
+		logger.Warn("Failed to process webhook response with opencode: %v", err)
+		logger.Warn("Using fallback: adding raw response as task")
+		return addRawTask(logger, response)
+	}
+
+	// Get the processed task list
+	processedTasks := strings.TrimSpace(output.String())
+
+	// Check if opencode found any tasks
+	if processedTasks == "" || strings.Contains(strings.ToLower(processedTasks), "no tasks found") {
+		logger.Info("No tasks found in webhook response")
+		return nil
+	}
+
+	// Read current tasks.md content
+	content, err := os.ReadFile("tasks.md")
+	if err != nil {
+		return fmt.Errorf("failed to read tasks.md: %v", err)
+	}
+
+	// Create new content with the processed tasks added
+	newContent := string(content)
+	if !strings.HasSuffix(newContent, "\n") {
+		newContent += "\n"
+	}
+
+	// Add a separator and the new tasks
+	newContent += "\n# Tasks from Webhook Response\n"
+	newContent += processedTasks + "\n"
+
+	// Write back to tasks.md
+	if err := os.WriteFile("tasks.md", []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to write to tasks.md: %v", err)
+	}
+
+	logger.Info("Added processed tasks to tasks.md from webhook response")
+	return nil
+}
+
+// addRawTask is a fallback function that adds the raw response as a single task
+func addRawTask(logger *Logger, response string) error {
 	// Read current tasks.md content
 	content, err := os.ReadFile("tasks.md")
 	if err != nil {
@@ -202,7 +275,7 @@ func addToTasks(logger *Logger, response string) error {
 		return fmt.Errorf("failed to write to tasks.md: %v", err)
 	}
 
-	logger.Info("Added response to tasks.md: %s", response)
+	logger.Info("Added raw response to tasks.md: %s", response)
 	return nil
 }
 
@@ -233,18 +306,6 @@ func sendWebhookNotification(logger *Logger, config Config, iterations int, comp
 		return fmt.Errorf("failed to send webhook: %v", err)
 	}
 
-	// Prompt for reply if enabled and this is not the last iteration
-	if config.ParseReply {
-		response, err := parseReply(logger, config, resp)
-		if err != nil {
-			logger.Warn("Failed to get user response: %v", err)
-		} else if response != "" && !config.AddToTasks {
-			// If not adding to tasks, we could potentially use this in the next iteration
-			// For now, just log that we received it
-			logger.Debug("User response received but not added to tasks: %s", response)
-		}
-	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -252,6 +313,21 @@ func sendWebhookNotification(logger *Logger, config Config, iterations int, comp
 	}
 
 	logger.Info("Webhook notification sent successfully to %s", config.WebhookURL)
+
+	// If ParseReply is enabled, wait for and process the webhook response
+	if config.ParseReply {
+		// Read the immediate response from the webhook
+		respdata, _ := io.ReadAll(resp.Body)
+		response := strings.TrimSpace(string(respdata))
+
+		if response != "" {
+			if err := processWebhookResponse(logger, config, response); err != nil {
+				logger.Warn("Failed to process webhook response: %v", err)
+			}
+		} else {
+			logger.Debug("No immediate response received from webhook")
+		}
+	}
 	return nil
 }
 
