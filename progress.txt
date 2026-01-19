@@ -1,7 +1,1 @@
-✅ Complete ✅
-- Implemented reply waiting functionality in ralph.go
-- Added config options: wait_for_reply, reply_prompt, add_to_tasks  
-- Added promptForReply() and addToTasks() functions
-- Updated main loop to prompt for user input between iterations
-- Updated config.json with default reply waiting settings
-- Tested compilation and basic functionality
+Fixed webhook reply functionality - system now waits for webhook replies from server instead of terminal input

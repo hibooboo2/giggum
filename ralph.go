@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -148,21 +149,23 @@ func loadConfig(logger *Logger) (*Config, error) {
 	return &config, nil
 }
 
-// promptForReply prompts the user for input and processes their response
+// promptForReply waits for a webhook reply from the server and processes it
 func promptForReply(logger *Logger, config *Config) (string, error) {
 	if !config.WaitForReply {
 		return "", nil
 	}
 
-	fmt.Print(config.ReplyPrompt)
-	var response string
-	_, err := fmt.Scanln(&response)
+	if config.WebhookURL == "" {
+		return "", fmt.Errorf("webhook URL is required when waiting for reply")
+	}
+
+	logger.Info("Waiting for webhook reply from server...")
+
+	// Wait for webhook reply by polling a response endpoint
+	// We'll look for a response file or implement a webhook receiver
+	response, err := waitForWebhookReply(logger, config)
 	if err != nil {
-		// Handle empty input (just pressing Enter)
-		if err.Error() == "unexpected newline" {
-			return "", nil
-		}
-		return "", fmt.Errorf("failed to read user input: %v", err)
+		return "", fmt.Errorf("failed to wait for webhook reply: %v", err)
 	}
 
 	response = strings.TrimSpace(response)
@@ -170,7 +173,7 @@ func promptForReply(logger *Logger, config *Config) (string, error) {
 		return "", nil
 	}
 
-	logger.Info("Received user response: %s", response)
+	logger.Info("Received webhook reply: %s", response)
 
 	// If configured to add to tasks.md
 	if config.AddToTasks {
@@ -180,6 +183,96 @@ func promptForReply(logger *Logger, config *Config) (string, error) {
 	}
 
 	return response, nil
+}
+
+// waitForWebhookReply waits for a webhook reply from the server
+func waitForWebhookReply(logger *Logger, config *Config) (string, error) {
+	// Implementation strategy:
+	// 1. Start a simple HTTP server to receive webhook replies
+	// 2. Wait for a response with a timeout
+	// 3. Extract the reply content from the webhook payload
+	// 4. Return the reply content
+
+	// Create a channel to receive the response
+	responseChan := make(chan string, 1)
+	errorChan := make(chan error, 1)
+
+	// Start HTTP server to receive webhook replies
+	server := &http.Server{Addr: ":8080"}
+
+	http.HandleFunc("/reply", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			errorChan <- fmt.Errorf("invalid method: %s", r.Method)
+			return
+		}
+
+		// Read the request body
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			errorChan <- fmt.Errorf("failed to read request body: %v", err)
+			return
+		}
+		defer r.Body.Close()
+
+		// Parse JSON payload
+		var payload map[string]interface{}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			errorChan <- fmt.Errorf("failed to parse JSON payload: %v", err)
+			return
+		}
+
+		// Extract reply from payload (could be in different fields)
+		var reply string
+		if replyVal, ok := payload["reply"]; ok {
+			reply = fmt.Sprintf("%v", replyVal)
+		} else if replyVal, ok := payload["response"]; ok {
+			reply = fmt.Sprintf("%v", replyVal)
+		} else if replyVal, ok := payload["message"]; ok {
+			reply = fmt.Sprintf("%v", replyVal)
+		} else {
+			// If no specific reply field, use the entire payload as string
+			reply = string(body)
+		}
+
+		// Send the reply to the waiting goroutine
+		responseChan <- reply
+
+		// Send success response
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Reply received"))
+	})
+
+	// Start server in a goroutine
+	go func() {
+		logger.Debug("Starting webhook reply server on :8080")
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errorChan <- fmt.Errorf("webhook server error: %v", err)
+		}
+	}()
+
+	// Wait for response or timeout
+	select {
+	case reply := <-responseChan:
+		// Shutdown the server
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+		return reply, nil
+
+	case err := <-errorChan:
+		// Shutdown the server
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+		return "", err
+
+	case <-time.After(30 * time.Second):
+		// Timeout after 30 seconds
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+		return "", fmt.Errorf("timeout waiting for webhook reply")
+	}
 }
 
 // addToTasks adds a response to the tasks.md file
@@ -215,10 +308,11 @@ func sendWebhookNotification(logger *Logger, webhookURL string, iterations int, 
 
 	// Prepare webhook payload
 	payload := map[string]interface{}{
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-		"iterations": iterations,
-		"completed":  completed,
-		"message":    "Ralph Wiggum execution completed",
+		"timestamp":      time.Now().UTC().Format(time.RFC3339),
+		"iterations":     iterations,
+		"completed":      completed,
+		"message":        "Ralph Wiggum execution completed",
+		"reply_endpoint": "http://localhost:8080/reply",
 	}
 
 	jsonPayload, err := json.Marshal(payload)
