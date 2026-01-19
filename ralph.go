@@ -228,7 +228,7 @@ func main() {
 		fmt.Printf("Running iteration %d/%d...\n", i, iterations)
 
 		// Build the opencode command
-		args := []string{"run"}
+		args := []string{"run", "--model", "opencode/big-pickle"}
 		if verbose {
 			args = append(args, "--print-logs")
 		}
@@ -238,14 +238,17 @@ func main() {
 
 		// Inherit environment variables from current process
 		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, "OPENAI_BASE_URL=http://100.83.162.29:1234")
 
-		// Capture output
-		output, err := cmd.CombinedOutput()
+		// Set up output streams
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+
+		// Run the command
+		err := cmd.Run()
+
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error running opencode on iteration %d: %v\n", i, err)
-			if verbose {
-				fmt.Fprintf(os.Stderr, "Command output: %s\n", string(output))
-			}
 
 			// Check if it's a network connectivity issue
 			if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "network") {
@@ -260,19 +263,50 @@ func main() {
 			continue
 		}
 
-		result := string(output)
+		// For verbose mode, we want to capture and also show the output
+		if verbose {
+			args := []string{"run", "--model", "opencode/big-pickle", "--print-logs", config.PromptCommand}
+			cmdVerbose := exec.Command("opencode", args...)
 
-		// Check if we got any output
-		if len(result) == 0 {
-			fmt.Printf("Warning: No output received from opencode on iteration %d\n", i)
+			// Inherit environment variables from current process
+			cmdVerbose.Env = os.Environ()
+			cmdVerbose.Env = append(cmdVerbose.Env, "OPENAI_BASE_URL=http://100.83.162.29:1234")
+
+			// Capture output for verbose display
+			output, err := cmdVerbose.CombinedOutput()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error capturing verbose output on iteration %d: %v\n", i, err)
+				continue
+			}
+
+			result := string(output)
+			if len(result) == 0 {
+				fmt.Printf("Warning: No output received from opencode on iteration %d\n", i)
+				continue
+			}
+
+			fmt.Printf("Opencode output received (%d bytes)\n", len(result))
+			fmt.Println(result)
+		}
+
+		// For completion signal and error checking, we need to capture output regardless of verbose mode
+		checkArgs := []string{"run", "--model", "opencode/big-pickle"}
+		if verbose {
+			checkArgs = append(checkArgs, "--print-logs")
+		}
+		checkArgs = append(checkArgs, config.PromptCommand)
+
+		cmdCheck := exec.Command("opencode", checkArgs...)
+		cmdCheck.Env = os.Environ()
+		cmdCheck.Env = append(cmdCheck.Env, "OPENAI_BASE_URL=http://100.83.162.29:1234")
+
+		checkOutput, checkErr := cmdCheck.CombinedOutput()
+		if checkErr != nil {
+			fmt.Fprintf(os.Stderr, "Error checking output on iteration %d: %v\n", i, checkErr)
 			continue
 		}
 
-		if verbose {
-			fmt.Printf("Opencode output received (%d bytes)\n", len(result))
-		}
-
-		fmt.Println(result)
+		result := string(checkOutput)
 
 		// Check for completion signal
 		if strings.Contains(result, "<promise>COMPLETE</promise>") || strings.Contains(result, "✅ Complete ✅") {
