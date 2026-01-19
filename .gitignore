@@ -1,4 +1,59 @@
+# Compiled binaries
 ralph
 giggum
+
+# Database files
+*.db
 .giggum.db
+giggum_tasks.db
+
+# Configuration files
 config.json
+
+# Backup files
+backups/
+*.bak
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Go specific
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# Coverage reports
+coverage.out
+coverage.txt
+
+# Log files
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
