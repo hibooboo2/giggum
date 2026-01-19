@@ -107,6 +107,7 @@ Please analyze this task and provide a structured response with the following fo
 
 TITLE: [Clear, concise title for the task]
 DESCRIPTION: [Detailed description of what needs to be done]
+STATUS: [pending/in_progress/completed based on current state]
 PRIORITY: [high/medium/low based on urgency and importance]
 TAGS: [comma-separated relevant tags like "frontend", "backend", "database", "ui", "api", etc.]
 METADATA: [JSON object with additional context like complexity, estimated_time, dependencies, etc.]
@@ -121,55 +122,135 @@ Focus on:
 Provide only the structured response, no additional explanation.`, rawTask)
 
 	fmt.Printf("🔍 Researching task requirements...\n")
-	err = runAgent(logger, Researcher, researcherPrompt, false)
+	researcherOutput, err := runAgentWithOutput(logger, Researcher, researcherPrompt, false)
 	if err != nil {
 		fmt.Printf("⚠️  Researcher agent analysis failed, proceeding with basic analysis: %v\n", err)
 		// Continue with basic analysis even if researcher fails
+
+		// Extract basic info from the raw task for now
+		lines := strings.Split(rawTask, ".")
+		title := lines[0]
+		if len(title) > 100 {
+			title = title[:97] + "..."
+		}
+		description := rawTask
+
+		// Basic heuristics for priority
+		priority := "medium"
+		lowerTask := strings.ToLower(rawTask)
+		if strings.Contains(lowerTask, "urgent") || strings.Contains(lowerTask, "critical") || strings.Contains(lowerTask, "asap") {
+			priority = "high"
+		} else if strings.Contains(lowerTask, "later") || strings.Contains(lowerTask, "when") || strings.Contains(lowerTask, "eventually") {
+			priority = "low"
+		}
+
+		// Basic heuristics for tags
+		tags := ""
+		if strings.Contains(lowerTask, "database") || strings.Contains(lowerTask, "db") || strings.Contains(lowerTask, "sql") {
+			tags = "database"
+		} else if strings.Contains(lowerTask, "frontend") || strings.Contains(lowerTask, "ui") || strings.Contains(lowerTask, "interface") {
+			tags = "frontend"
+		} else if strings.Contains(lowerTask, "backend") || strings.Contains(lowerTask, "api") || strings.Contains(lowerTask, "server") {
+			tags = "backend"
+		} else if strings.Contains(lowerTask, "test") || strings.Contains(lowerTask, "testing") {
+			tags = "testing"
+		}
+
+		// Create the task with basic analysis
+		task, err := taskManager.CreateTaskWithStatus(title, description, priority, "pending")
+		if err != nil {
+			return fmt.Errorf("failed to create task: %v", err)
+		}
+
+		// Update tags and metadata if provided
+		metadata := fmt.Sprintf(`{"source": "task_add_command", "raw_input": "%s", "analysis_date": "%s"}`,
+			strings.ReplaceAll(rawTask, "\"", "'"),
+			time.Now().Format("2006-01-02T15:04:05Z"))
+
+		if tags != "" || metadata != "" {
+			if err := taskManager.UpdateTaskMetadata(task.ID, tags, metadata); err != nil {
+				fmt.Printf("Warning: failed to save tags/metadata: %v\n", err)
+			} else {
+				// Refresh the task to get updated values
+				task, _ = taskManager.GetTask(task.ID)
+			}
+		}
+
+		// Display the created task
+		fmt.Printf("\n✅ Task created successfully!\n")
+		fmt.Printf("📋 ID: %d\n", task.ID)
+		fmt.Printf("📝 Title: %s\n", task.Title)
+		if task.Description != "" {
+			fmt.Printf("📄 Description: %s\n", task.Description)
+		}
+		fmt.Printf("🎯 Priority: %s\n", task.Priority)
+		fmt.Printf("📅 Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("📊 Status: %s\n", task.Status)
+		if task.Tags != "" {
+			fmt.Printf("🏷️  Tags: %s\n", task.Tags)
+		}
+
+		return nil
 	}
 
-	// Note: In a real implementation, we would capture the researcher's output
-	// For now, we'll create a basic task with the raw string as both title and description
-	// and let the user refine it later
+	// Parse the researcher's output
+	title, description, status, priority, tags, researcherMetadata := parseResearcherOutput(researcherOutput)
 
-	// Extract basic info from the raw task for now
-	lines := strings.Split(rawTask, ".")
-	title := lines[0]
-	if len(title) > 100 {
-		title = title[:97] + "..."
+	// Use researcher's analysis, fall back to defaults if empty
+	if title == "" {
+		lines := strings.Split(rawTask, ".")
+		title = lines[0]
+		if len(title) > 100 {
+			title = title[:97] + "..."
+		}
 	}
-	description := rawTask
-
-	// Basic heuristics for priority
-	priority := "medium"
-	lowerTask := strings.ToLower(rawTask)
-	if strings.Contains(lowerTask, "urgent") || strings.Contains(lowerTask, "critical") || strings.Contains(lowerTask, "asap") {
-		priority = "high"
-	} else if strings.Contains(lowerTask, "later") || strings.Contains(lowerTask, "when") || strings.Contains(lowerTask, "eventually") {
-		priority = "low"
+	if description == "" {
+		description = rawTask
 	}
-
-	// Basic heuristics for tags
-	tags := ""
-	if strings.Contains(lowerTask, "database") || strings.Contains(lowerTask, "db") || strings.Contains(lowerTask, "sql") {
-		tags = "database"
-	} else if strings.Contains(lowerTask, "frontend") || strings.Contains(lowerTask, "ui") || strings.Contains(lowerTask, "interface") {
-		tags = "frontend"
-	} else if strings.Contains(lowerTask, "backend") || strings.Contains(lowerTask, "api") || strings.Contains(lowerTask, "server") {
-		tags = "backend"
-	} else if strings.Contains(lowerTask, "test") || strings.Contains(lowerTask, "testing") {
-		tags = "testing"
+	if status == "" {
+		status = "pending"
+		// For new tasks created by user, default to pending unless researcher suggests otherwise
+	}
+	if priority == "" {
+		priority = "medium"
+		// Apply basic heuristics if researcher didn't provide priority
+		lowerTask := strings.ToLower(rawTask)
+		if strings.Contains(lowerTask, "urgent") || strings.Contains(lowerTask, "critical") || strings.Contains(lowerTask, "asap") {
+			priority = "high"
+		} else if strings.Contains(lowerTask, "later") || strings.Contains(lowerTask, "when") || strings.Contains(lowerTask, "eventually") {
+			priority = "low"
+		}
+	}
+	if tags == "" {
+		// Apply basic heuristics if researcher didn't provide tags
+		lowerTask := strings.ToLower(rawTask)
+		if strings.Contains(lowerTask, "database") || strings.Contains(lowerTask, "db") || strings.Contains(lowerTask, "sql") {
+			tags = "database"
+		} else if strings.Contains(lowerTask, "frontend") || strings.Contains(lowerTask, "ui") || strings.Contains(lowerTask, "interface") {
+			tags = "frontend"
+		} else if strings.Contains(lowerTask, "backend") || strings.Contains(lowerTask, "api") || strings.Contains(lowerTask, "server") {
+			tags = "backend"
+		} else if strings.Contains(lowerTask, "test") || strings.Contains(lowerTask, "testing") {
+			tags = "testing"
+		}
 	}
 
 	// Create the task
-	task, err := taskManager.CreateTask(title, description, priority)
+	task, err := taskManager.CreateTaskWithStatus(title, description, priority, status)
 	if err != nil {
 		return fmt.Errorf("failed to create task: %v", err)
 	}
 
 	// Update tags and metadata if provided
-	metadata := fmt.Sprintf(`{"source": "task_add_command", "raw_input": "%s", "analysis_date": "%s"}`,
+	baseMetadata := fmt.Sprintf(`{"source": "task_add_command", "raw_input": "%s", "analysis_date": "%s"}`,
 		strings.ReplaceAll(rawTask, "\"", "'"),
 		time.Now().Format("2006-01-02T15:04:05Z"))
+
+	// Combine with researcher metadata if available
+	metadata := baseMetadata
+	if researcherMetadata != "" {
+		metadata = fmt.Sprintf(`%s, "researcher_analysis": %s`, strings.TrimSuffix(baseMetadata, "}"), researcherMetadata)
+	}
 
 	if tags != "" || metadata != "" {
 		if err := taskManager.UpdateTaskMetadata(task.ID, tags, metadata); err != nil {

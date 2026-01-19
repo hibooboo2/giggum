@@ -120,15 +120,23 @@ func (tm *TaskManager) Close() error {
 
 // CreateTask creates a new task in the database
 func (tm *TaskManager) CreateTask(title, description, priority string) (*Task, error) {
+	return tm.CreateTaskWithStatus(title, description, priority, "pending")
+}
+
+// CreateTaskWithStatus creates a new task in the database with specified status
+func (tm *TaskManager) CreateTaskWithStatus(title, description, priority, status string) (*Task, error) {
 	if priority == "" {
 		priority = "medium"
 	}
+	if status == "" {
+		status = "pending"
+	}
 
 	query := `
-	INSERT INTO tasks (title, description, priority)
-	VALUES (?, ?, ?)`
+	INSERT INTO tasks (title, description, priority, status)
+	VALUES (?, ?, ?, ?)`
 
-	result, err := tm.db.Exec(query, title, description, priority)
+	result, err := tm.db.Exec(query, title, description, priority, status)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create task: %v", err)
 	}
