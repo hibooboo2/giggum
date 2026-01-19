@@ -1,0 +1,440 @@
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// TaskManager manages tasks in SQLite database
+type TaskManager struct {
+	db *sql.DB
+}
+
+// Task represents a single task in the database
+type Task struct {
+	ID          int64      `json:"id"`
+	Title       string     `json:"title"`
+	Description string     `json:"description"`
+	Status      string     `json:"status"`   // pending, in_progress, completed, cancelled
+	Priority    string     `json:"priority"` // high, medium, low
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Tags        string     `json:"tags,omitempty"`
+	Metadata    string     `json:"metadata,omitempty"`
+}
+
+// NewTaskManager creates a new task manager with SQLite database
+func NewTaskManager(dbPath string) (*TaskManager, error) {
+	// Ensure the directory exists
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %v", err)
+	}
+
+	// Open database connection
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %v", err)
+	}
+
+	// Test connection
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping database: %v", err)
+	}
+
+	manager := &TaskManager{db: db}
+
+	// Initialize tables
+	if err := manager.initTables(); err != nil {
+		return nil, fmt.Errorf("failed to initialize tables: %v", err)
+	}
+
+	return manager, nil
+}
+
+// initTables creates the necessary tables for task management
+func (tm *TaskManager) initTables() error {
+	// Create tasks table
+	tasksTable := `
+	CREATE TABLE IF NOT EXISTS tasks (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		title TEXT NOT NULL,
+		description TEXT,
+		status TEXT NOT NULL DEFAULT 'pending',
+		priority TEXT NOT NULL DEFAULT 'medium',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		completed_at DATETIME,
+		tags TEXT,
+		metadata TEXT
+	)`
+
+	// Create task_history table for tracking changes
+	historyTable := `
+	CREATE TABLE IF NOT EXISTS task_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id INTEGER NOT NULL,
+		action TEXT NOT NULL,
+		old_status TEXT,
+		new_status TEXT,
+		notes TEXT,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (task_id) REFERENCES tasks (id) ON DELETE CASCADE
+	)`
+
+	// Create indexes for better performance
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
+		"CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority)",
+		"CREATE INDEX IF NOT EXISTS idx_tasks_created_at ON tasks(created_at)",
+		"CREATE INDEX IF NOT EXISTS idx_task_history_task_id ON task_history(task_id)",
+	}
+
+	tables := []string{tasksTable, historyTable}
+	for _, table := range tables {
+		if _, err := tm.db.Exec(table); err != nil {
+			return fmt.Errorf("failed to create table: %v", err)
+		}
+	}
+
+	for _, index := range indexes {
+		if _, err := tm.db.Exec(index); err != nil {
+			return fmt.Errorf("failed to create index: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// Close closes the database connection
+func (tm *TaskManager) Close() error {
+	return tm.db.Close()
+}
+
+// CreateTask creates a new task in the database
+func (tm *TaskManager) CreateTask(title, description, priority string) (*Task, error) {
+	if priority == "" {
+		priority = "medium"
+	}
+
+	query := `
+	INSERT INTO tasks (title, description, priority)
+	VALUES (?, ?, ?)`
+
+	result, err := tm.db.Exec(query, title, description, priority)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create task: %v", err)
+	}
+
+	taskID, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get task ID: %v", err)
+	}
+
+	// Return the created task
+	return tm.GetTask(taskID)
+}
+
+// GetTask retrieves a task by ID
+func (tm *TaskManager) GetTask(id int64) (*Task, error) {
+	query := `
+	SELECT id, title, description, status, priority, created_at, updated_at, completed_at, tags, metadata
+	FROM tasks
+	WHERE id = ?`
+
+	row := tm.db.QueryRow(query, id)
+
+	var task Task
+	var completedAt sql.NullString
+	var tags, metadata sql.NullString
+
+	err := row.Scan(
+		&task.ID, &task.Title, &task.Description, &task.Status, &task.Priority,
+		&task.CreatedAt, &task.UpdatedAt, &completedAt, &tags, &metadata)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("task not found: %d", id)
+		}
+		return nil, fmt.Errorf("failed to get task: %v", err)
+	}
+
+	// Handle nullable fields
+	if completedAt.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", completedAt.String); err == nil {
+			task.CompletedAt = &t
+		}
+	}
+	if tags.Valid {
+		task.Tags = tags.String
+	}
+	if metadata.Valid {
+		task.Metadata = metadata.String
+	}
+
+	return &task, nil
+}
+
+// GetAllTasks retrieves all tasks from the database
+func (tm *TaskManager) GetAllTasks() ([]Task, error) {
+	query := `
+	SELECT id, title, description, status, priority, created_at, updated_at, completed_at, tags, metadata
+	FROM tasks
+	ORDER BY priority DESC, created_at ASC`
+
+	rows, err := tm.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tasks: %v", err)
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var task Task
+		var completedAt sql.NullString
+		var tags, metadata sql.NullString
+
+		err := rows.Scan(
+			&task.ID, &task.Title, &task.Description, &task.Status, &task.Priority,
+			&task.CreatedAt, &task.UpdatedAt, &completedAt, &tags, &metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan task row: %v", err)
+		}
+
+		// Handle nullable fields
+		if completedAt.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", completedAt.String); err == nil {
+				task.CompletedAt = &t
+			}
+		}
+		if tags.Valid {
+			task.Tags = tags.String
+		}
+		if metadata.Valid {
+			task.Metadata = metadata.String
+		}
+
+		tasks = append(tasks, task)
+	}
+
+	return tasks, rows.Err()
+}
+
+// UpdateTaskStatus updates the status of a task
+func (tm *TaskManager) UpdateTaskStatus(id int64, newStatus string) error {
+	// Get current status first
+	task, err := tm.GetTask(id)
+	if err != nil {
+		return fmt.Errorf("failed to get current task status: %v", err)
+	}
+
+	// Start transaction
+	tx, err := tm.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Update task status
+	var completedAt interface{}
+	if newStatus == "completed" {
+		completedAt = time.Now()
+	}
+
+	updateQuery := `
+	UPDATE tasks 
+	SET status = ?, updated_at = CURRENT_TIMESTAMP, completed_at = ?
+	WHERE id = ?`
+
+	_, err = tx.Exec(updateQuery, newStatus, completedAt, id)
+	if err != nil {
+		return fmt.Errorf("failed to update task status: %v", err)
+	}
+
+	// Add to history
+	historyQuery := `
+	INSERT INTO task_history (task_id, action, old_status, new_status)
+	VALUES (?, 'status_change', ?, ?)`
+
+	_, err = tx.Exec(historyQuery, id, task.Status, newStatus)
+	if err != nil {
+		return fmt.Errorf("failed to add to history: %v", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return nil
+}
+
+// DeleteTask deletes a task from the database
+func (tm *TaskManager) DeleteTask(id int64) error {
+	query := `DELETE FROM tasks WHERE id = ?`
+
+	result, err := tm.db.Exec(query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete task: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("task not found: %d", id)
+	}
+
+	return nil
+}
+
+// GetTaskStats returns statistics about tasks
+func (tm *TaskManager) GetTaskStats() (map[string]int, error) {
+	stats := make(map[string]int)
+
+	// Count by status
+	statusQuery := `
+	SELECT status, COUNT(*) 
+	FROM tasks 
+	GROUP BY status`
+
+	rows, err := tm.db.Query(statusQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query task stats: %v", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			continue
+		}
+		stats[status] = count
+	}
+
+	// Get total count
+	var total int
+	err = tm.db.QueryRow("SELECT COUNT(*) FROM tasks").Scan(&total)
+	if err == nil {
+		stats["total"] = total
+	}
+
+	return stats, nil
+}
+
+// ImportTasksFromMarkdown imports tasks from a markdown file
+func (tm *TaskManager) ImportTasksFromMarkdown(content string) error {
+	lines := []string{}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "#") {
+			lines = append(lines, line)
+		}
+	}
+
+	for _, line := range lines {
+		// Skip empty lines and headers
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse task line
+		task := tm.parseTaskLine(line)
+		if task != nil {
+			_, err := tm.CreateTask(task.Title, task.Description, task.Priority)
+			if err != nil {
+				fmt.Printf("Warning: failed to create task from line '%s': %v\n", line, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// parseTaskLine parses a single line from tasks.md into a Task
+func (tm *TaskManager) parseTaskLine(line string) *Task {
+	// Remove list markers
+	line = strings.TrimPrefix(line, "- ")
+	line = strings.TrimPrefix(line, "* ")
+	line = strings.TrimPrefix(line, "• ")
+
+	// Extract priority from parentheses
+	priority := "medium"
+	title := line
+
+	if idx := strings.Index(line, " ("); idx != -1 && strings.HasSuffix(line, ")") {
+		title = line[:idx]
+		priorityStr := line[idx+2 : len(line)-1]
+		priority = strings.ToLower(priorityStr)
+		if priority != "high" && priority != "medium" && priority != "low" {
+			priority = "medium"
+		}
+	}
+
+	// Clean up title
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return nil
+	}
+
+	return &Task{
+		Title:    title,
+		Priority: priority,
+		Status:   "pending",
+	}
+}
+
+// GetTasksByStatus retrieves tasks filtered by status
+func (tm *TaskManager) GetTasksByStatus(status string) ([]Task, error) {
+	query := `
+	SELECT id, title, description, status, priority, created_at, updated_at, completed_at, tags, metadata
+	FROM tasks
+	WHERE status = ?
+	ORDER BY priority DESC, created_at ASC`
+
+	rows, err := tm.db.Query(query, status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query tasks by status: %v", err)
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var task Task
+		var completedAt sql.NullString
+		var tags, metadata sql.NullString
+
+		err := rows.Scan(
+			&task.ID, &task.Title, &task.Description, &task.Status, &task.Priority,
+			&task.CreatedAt, &task.UpdatedAt, &completedAt, &tags, &metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan task row: %v", err)
+		}
+
+		// Handle nullable fields
+		if completedAt.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", completedAt.String); err == nil {
+				task.CompletedAt = &t
+			}
+		}
+		if tags.Valid {
+			task.Tags = tags.String
+		}
+		if metadata.Valid {
+			task.Metadata = metadata.String
+		}
+
+		tasks = append(tasks, task)
+	}
+
+	return tasks, rows.Err()
+}

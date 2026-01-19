@@ -1,7 +1,4 @@
-1. Decide which task to work on next from  @tasks_parsed.md
-This should be the one YOU decide has the highest priority,
-- not necessarily the first in the list.
-    - Make sure new code does not duplicate old code or itself
+1. Complete the task provided
 2. Check any feedback loops, such as types and tests.
 3. Append your progress to the progress.txt file.
 4. Make a git commit of that feature.

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 )
@@ -99,15 +100,13 @@ func showAgentProgress() {
 
 // runMultiAgentSession coordinates multiple agents to work on tasks
 func runMultiAgentSession(logger *Logger, config Config, iterations int, debug bool) error {
-	err := runAgent(logger, Researcher, "read @tasks.md add metadata for each task expand a little sort them by priority and then write it to @tasks_parsed.md each line should contain one task that has sightly more info than the original task", debug)
-	if err != nil {
-		return fmt.Errorf("failed to run task parsing")
-	}
-
 	// Read tasks.md to get the list of tasks
 	tasksContent, err := os.ReadFile("tasks_parsed.md")
 	if err != nil {
-		return fmt.Errorf("failed to read tasks_parsed.md: %v", err)
+		err := runAgent(logger, Researcher, "read @tasks.md add metadata for each task expand a little sort them by priority and then write it to @tasks_parsed.md each line should contain one task that has sightly more info than the original task, organize in sections if needed sections should start with <section> and end with a </section> make sure there are no areas of code that do not have a section tag", debug)
+		if err != nil {
+			return fmt.Errorf("failed to run task parsing")
+		}
 	}
 
 	// Parse tasks from file
@@ -115,8 +114,6 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 	if len(tasks) == 0 {
 		return fmt.Errorf("no tasks found in tasks_parsed.md")
 	}
-
-	return nil
 
 	// Define agent priorities for different task types
 	agentPriority := []AgentType{
@@ -145,7 +142,7 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 			i+1, iterations, agentType, task)
 
 		// Run the agent
-		err := runAgent(logger, agentType, "Please follow the instructions in @prompt.md", debug)
+		err := runAgent(logger, agentType, "Please follow the instructions in @prompt.md Task: "+task, debug)
 		if err != nil {
 			logger.Warn("Agent %s failed on task '%s': %v", agentType, task, err)
 			// Try with a different agent as fallback
@@ -174,16 +171,14 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 // parseTasks extracts tasks from tasks.md content
 func parseTasks(content string) []string {
 	var tasks []string
-	lines := strings.Split(content, "\n")
+	lines := strings.Split(content, "</section>")
+	log.Println(len(lines))
 
 	for _, line := range lines {
+		line = strings.ReplaceAll(line, "<section", "")
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "- ") {
-			task := strings.TrimPrefix(line, "- ")
-			task = strings.TrimSpace(task)
-			if task != "" {
-				tasks = append(tasks, task)
-			}
+		if line != "" {
+			tasks = append(tasks, line)
 		}
 	}
 
@@ -431,6 +426,7 @@ func showHelp() {
     -multi-agent    Run coordinated multi-agent session
     -list-agents    List all available agent types and their descriptions
     -show-progress  Show agent progress for current project
+    -task CMD       Task management command (list, stats, import)
 
  EXAMPLES:
     ralph           # Run 10 iterations with default backend-developer agent
@@ -441,6 +437,9 @@ func showHelp() {
     ralph -multi-agent   # Run coordinated multi-agent session
     ralph -show-progress # Show agent progress
     ralph -list-agents  # Show all available agent types
+    ralph -task list     # List all tasks from database
+    ralph -task stats    # Show task statistics
+    ralph -task import   # Import tasks from tasks.md file
     ralph -h        # Show this help
 
  REQUIRED FILES:
