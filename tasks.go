@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -330,68 +329,6 @@ func (tm *TaskManager) GetTaskStats() (map[string]int, error) {
 	}
 
 	return stats, nil
-}
-
-// ImportTasksFromMarkdown imports tasks from a markdown file
-func (tm *TaskManager) ImportTasksFromMarkdown(content string) error {
-	lines := []string{}
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
-			lines = append(lines, line)
-		}
-	}
-
-	for _, line := range lines {
-		// Skip empty lines and headers
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Parse task line
-		task := tm.parseTaskLine(line)
-		if task != nil {
-			_, err := tm.CreateTask(task.Title, task.Description, task.Priority)
-			if err != nil {
-				fmt.Printf("Warning: failed to create task from line '%s': %v\n", line, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// parseTaskLine parses a single line from tasks.md into a Task
-func (tm *TaskManager) parseTaskLine(line string) *Task {
-	// Remove list markers
-	line = strings.TrimPrefix(line, "- ")
-	line = strings.TrimPrefix(line, "* ")
-	line = strings.TrimPrefix(line, "• ")
-
-	// Extract priority from parentheses
-	priority := "medium"
-	title := line
-
-	if idx := strings.Index(line, " ("); idx != -1 && strings.HasSuffix(line, ")") {
-		title = line[:idx]
-		priorityStr := line[idx+2 : len(line)-1]
-		priority = strings.ToLower(priorityStr)
-		if priority != "high" && priority != "medium" && priority != "low" {
-			priority = "medium"
-		}
-	}
-
-	// Clean up title
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return nil
-	}
-
-	return &Task{
-		Title:    title,
-		Priority: priority,
-		Status:   "pending",
-	}
 }
 
 // UpdateTaskMetadata updates tags and metadata for a task
