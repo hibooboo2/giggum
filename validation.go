@@ -187,5 +187,6 @@ func isTimeoutError(err error) bool {
 		return false
 	}
 	return strings.Contains(err.Error(), "timeout") ||
+		strings.Contains(err.Error(), "timed out") ||
 		strings.Contains(err.Error(), "deadline exceeded")
 }

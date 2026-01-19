@@ -10,12 +10,13 @@ import (
 // Config holds the configuration for the Ralph Wiggum loop
 // Note: This system uses AGENT-ONLY execution - no traditional execution paths exist
 type Config struct {
-	WebhookURL  string    `json:"webhook_url"`
-	ParseReply  bool      `json:"wait_for_reply"`
-	ReplyPrompt string    `json:"reply_prompt"`
-	AddToTasks  bool      `json:"add_to_tasks"`
-	AgentType   AgentType `json:"agent_type"`
-	UseAgents   bool      `json:"use_agents"` // DEPRECATED: Always true for agent-only execution
+	WebhookURL   string    `json:"webhook_url"`
+	ParseReply   bool      `json:"wait_for_reply"`
+	ReplyPrompt  string    `json:"reply_prompt"`
+	AddToTasks   bool      `json:"add_to_tasks"`
+	AgentType    AgentType `json:"agent_type"`
+	UseAgents    bool      `json:"use_agents"`    // DEPRECATED: Always true for agent-only execution
+	AgentTimeout int       `json:"agent_timeout"` // Timeout in minutes for agent execution (default: 30)
 	// Future configuration options can be added here
 }
 
@@ -27,11 +28,12 @@ func loadConfig(logger *Logger) (Config, error) {
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		logger.Debug("Config file '%s' not found, using default configuration", configFile)
 		return Config{
-			ParseReply:  false,
-			ReplyPrompt: "Enter your response (or press Enter to continue): ",
-			AddToTasks:  true,
-			UseAgents:   true,             // Agent-only execution enforced
-			AgentType:   BackendDeveloper, // Default to BackendDeveloper
+			ParseReply:   false,
+			ReplyPrompt:  "Enter your response (or press Enter to continue): ",
+			AddToTasks:   true,
+			UseAgents:    true,             // Agent-only execution enforced
+			AgentType:    BackendDeveloper, // Default to BackendDeveloper
+			AgentTimeout: 30,               // Default 30 minutes timeout
 		}, nil
 	}
 
@@ -50,6 +52,11 @@ func loadConfig(logger *Logger) (Config, error) {
 	// Set defaults for reply functionality
 	if config.ReplyPrompt == "" {
 		config.ReplyPrompt = "Enter your response (or press Enter to continue): "
+	}
+
+	// Set default timeout if not specified
+	if config.AgentTimeout == 0 {
+		config.AgentTimeout = 30 // Default 30 minutes
 	}
 
 	// Enforce agent-only execution - no traditional execution paths

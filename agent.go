@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // createAgentPrompt creates a prompt for a specific agent type
@@ -59,7 +61,7 @@ func getAgentPrompts(agentType AgentType, task string) (string, string, error) {
 }
 
 // runAgent executes a task using a specific agent type
-func runAgent(logger *Logger, agentType AgentType, task string, debug bool) error {
+func runAgent(logger *Logger, agentType AgentType, task string, debug bool, timeoutMinutes int) error {
 	// Get the current working directory for project path
 	projectPath, err := os.Getwd()
 	if err != nil {
@@ -93,17 +95,25 @@ func runAgent(logger *Logger, agentType AgentType, task string, debug bool) erro
 
 	logger.Info("Running %s agent for task: %s", agentType, task)
 
+	// Create timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMinutes)*time.Minute)
+	defer cancel()
+
 	// Build the opencode command
 	args := []string{"run", "--model", "opencode/big-pickle"}
 	if debug {
 		args = append(args, "--print-logs")
 	}
 
-	// Combine the system prompt with the task prompt
-	fullPrompt := fmt.Sprintf("%s\n\n%s", agentSystemPrompt, agentTaskPrompt)
+	// Add timeout information to the task prompt
+	timeoutNotice := fmt.Sprintf("\n\nIMPORTANT: You have %d minutes maximum to complete this task. Monitor your time and ensure you reach a stopping point before the timeout. If you're running short on time, prioritize the most critical aspects and provide a partial solution with clear next steps.", timeoutMinutes)
+	enhancedTaskPrompt := agentTaskPrompt + timeoutNotice
+
+	// Combine the system prompt with the enhanced task prompt
+	fullPrompt := fmt.Sprintf("%s\n\n%s", agentSystemPrompt, enhancedTaskPrompt)
 	args = append(args, fullPrompt)
 
-	cmd := exec.Command("opencode", args...)
+	cmd := exec.CommandContext(ctx, "opencode", args...)
 	cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
 
 	// Set up output capture
@@ -120,9 +130,14 @@ func runAgent(logger *Logger, agentType AgentType, task string, debug bool) erro
 		dbManager.AddSessionInput(sessionID, fullPrompt)
 	}
 
-	// Run the command
+	// Run the command with timeout
 	err = cmd.Run()
 	output := outputBuffer.String()
+
+	// Check for timeout
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("agent execution timed out after %d minutes", timeoutMinutes)
+	}
 
 	// Add output to database
 	if dbManager != nil && sessionID > 0 {
@@ -142,7 +157,7 @@ func runAgent(logger *Logger, agentType AgentType, task string, debug bool) erro
 }
 
 // runAgentWithOutputCapture executes a task using a specific agent type and captures output for completion detection
-func runAgentWithOutputCapture(logger *Logger, agentType AgentType, task string, debug bool) error {
+func runAgentWithOutputCapture(logger *Logger, agentType AgentType, task string, debug bool, timeoutMinutes int) error {
 	// Get the current working directory for project path
 	projectPath, err := os.Getwd()
 	if err != nil {
@@ -176,17 +191,25 @@ func runAgentWithOutputCapture(logger *Logger, agentType AgentType, task string,
 
 	logger.Info("Running %s agent for task: %s", agentType, task)
 
+	// Create timeout context
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMinutes)*time.Minute)
+	defer cancel()
+
 	// Build the opencode command
 	args := []string{"run", "--model", "opencode/big-pickle"}
 	if debug {
 		args = append(args, "--print-logs")
 	}
 
-	// Combine the system prompt with the task prompt
-	fullPrompt := fmt.Sprintf("%s\n\n%s", agentSystemPrompt, agentTaskPrompt)
+	// Add timeout information to the task prompt
+	timeoutNotice := fmt.Sprintf("\n\nIMPORTANT: You have %d minutes maximum to complete this task. Monitor your time and ensure you reach a stopping point before the timeout. If you're running short on time, prioritize the most critical aspects and provide a partial solution with clear next steps.", timeoutMinutes)
+	enhancedTaskPrompt := agentTaskPrompt + timeoutNotice
+
+	// Combine the system prompt with the enhanced task prompt
+	fullPrompt := fmt.Sprintf("%s\n\n%s", agentSystemPrompt, enhancedTaskPrompt)
 	args = append(args, fullPrompt)
 
-	cmd := exec.Command("opencode", args...)
+	cmd := exec.CommandContext(ctx, "opencode", args...)
 	cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
 
 	// Set up output capture for completion detection and verbose output
@@ -208,9 +231,14 @@ func runAgentWithOutputCapture(logger *Logger, agentType AgentType, task string,
 		dbManager.AddSessionInput(sessionID, fullPrompt)
 	}
 
-	// Run the command
+	// Run the command with timeout
 	err = cmd.Run()
 	output := outputBuffer.String()
+
+	// Check for timeout
+	if ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("agent execution timed out after %d minutes", timeoutMinutes)
+	}
 
 	// Add output to database
 	if dbManager != nil && sessionID > 0 {

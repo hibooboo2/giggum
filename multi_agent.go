@@ -148,14 +148,14 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 			continue
 		}
 
-		err := runAgent(logger, agentType, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v```", task), debug)
+		err := runAgent(logger, agentType, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v```", task), debug, config.AgentTimeout)
 		if err != nil {
 			logger.Warn("Agent %s failed on task '%s': %v", agentType, task, err)
 			taskManager.UpdateTaskStatus(task.ID, "debugging")
 			// Try with a different agent as fallback
 			if agentType != Debugger {
 				fmt.Printf("Retrying with Debugger agent...\n")
-				err := runAgent(logger, Debugger, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v``` keep in mind your collegue just tried to do this and left the repo in a state that needs to be fixed", task), debug)
+				err := runAgent(logger, Debugger, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v``` keep in mind your collegue just tried to do this and left the repo in a state that needs to be fixed", task), debug, config.AgentTimeout)
 				if err != nil {
 					logger.Error("Debugger also failed on task '%s': %v", task, err)
 					taskManager.UpdateTaskStatus(task.ID, "failed")
