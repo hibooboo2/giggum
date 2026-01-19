@@ -182,13 +182,19 @@ func main() {
 		}
 	}
 
-	// Load configuration (optional)
-	config := &Config{PromptCommand: DefaultPromptCommand}
-	if content, err := os.ReadFile("config.json"); err == nil {
-		json.Unmarshal(content, config)
-		if config.PromptCommand == "" {
-			config.PromptCommand = DefaultPromptCommand
-		}
+	// Create logger for configuration loading
+	logger, err := NewLogger("INFO", verbose, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Close()
+
+	// Load configuration using the loadConfig function
+	config, err := loadConfig(logger)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Run the autonomous coding loop
