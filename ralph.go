@@ -23,11 +23,13 @@ type Logger struct {
 
 // Config holds the configuration for the Ralph Wiggum loop
 type Config struct {
-	PromptCommand string `json:"prompt_command"`
-	WebhookURL    string `json:"webhook_url"`
-	ParseReply    bool   `json:"wait_for_reply"`
-	ReplyPrompt   string `json:"reply_prompt"`
-	AddToTasks    bool   `json:"add_to_tasks"`
+	PromptCommand string    `json:"prompt_command"`
+	WebhookURL    string    `json:"webhook_url"`
+	ParseReply    bool      `json:"wait_for_reply"`
+	ReplyPrompt   string    `json:"reply_prompt"`
+	AddToTasks    bool      `json:"add_to_tasks"`
+	AgentType     AgentType `json:"agent_type,omitempty"`
+	UseAgents     bool      `json:"use_agents"`
 	// Future configuration options can be added here
 }
 
@@ -106,6 +108,100 @@ func (l *Logger) Error(msg string, args ...any) {
 	l.Logger.Error(msg, args...)
 }
 
+// createAgentPrompt creates a prompt for a specific agent type
+func createAgentPrompt(agentType AgentType, task string) (string, error) {
+	prompt, err := GetAgentPrompt(agentType)
+	if err != nil {
+		return "", fmt.Errorf("failed to get agent prompt: %v", err)
+	}
+
+	return fmt.Sprintf(prompt.TaskPrompt, task), nil
+}
+
+// runAgent executes a task using a specific agent type
+func runAgent(logger *Logger, agentType AgentType, task string, debug bool) error {
+	// Get the current working directory for project path
+	projectPath, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %v", err)
+	}
+
+	// Initialize database manager
+	dbPath := GetProjectDBPath(projectPath)
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		logger.Warn("Failed to initialize database: %v", err)
+		// Continue without database if it fails
+	} else {
+		defer dbManager.Close()
+	}
+
+	// Create agent session
+	var sessionID int64
+	if dbManager != nil {
+		sessionID, err = dbManager.CreateAgentSession(agentType, projectPath)
+		if err != nil {
+			logger.Warn("Failed to create agent session: %v", err)
+		}
+	}
+
+	// Create agent-specific prompt
+	agentPrompt, err := createAgentPrompt(agentType, task)
+	if err != nil {
+		return fmt.Errorf("failed to create agent prompt: %v", err)
+	}
+
+	logger.Info("Running %s agent for task: %s", agentType, task)
+
+	// Build the opencode command
+	args := []string{"run", "--model", "opencode/big-pickle"}
+	if debug {
+		args = append(args, "--print-logs")
+	}
+
+	// Combine the system prompt with the task prompt
+	agentPromptInfo, _ := GetAgentPrompt(agentType)
+	fullPrompt := fmt.Sprintf("%s\n\n%s", agentPromptInfo.SystemPrompt, agentPrompt)
+	args = append(args, fullPrompt)
+
+	cmd := exec.Command("opencode", args...)
+	cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
+
+	// Set up output capture
+	var outputBuffer bytes.Buffer
+	var writer io.Writer = &outputBuffer
+
+	writer = io.MultiWriter(&outputBuffer, os.Stdout)
+
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	// Add input to database
+	if dbManager != nil && sessionID > 0 {
+		dbManager.AddSessionInput(sessionID, fullPrompt)
+	}
+
+	// Run the command
+	err = cmd.Run()
+	output := outputBuffer.String()
+
+	// Add output to database
+	if dbManager != nil && sessionID > 0 {
+		dbManager.AddSessionOutput(sessionID, output)
+	}
+
+	if err != nil {
+		return fmt.Errorf("agent execution failed: %v", err)
+	}
+
+	// Close the session
+	if dbManager != nil && sessionID > 0 {
+		dbManager.EndAgentSession(sessionID)
+	}
+
+	return nil
+}
+
 // loadConfig loads configuration from config.json file, returns default config if file doesn't exist
 func loadConfig(logger *Logger) (*Config, error) {
 	configFile := "config.json"
@@ -118,6 +214,8 @@ func loadConfig(logger *Logger) (*Config, error) {
 			ParseReply:    false,
 			ReplyPrompt:   "Enter your response (or press Enter to continue): ",
 			AddToTasks:    true,
+			UseAgents:     false,
+			AgentType:     "",
 		}, nil
 	}
 
@@ -141,6 +239,11 @@ func loadConfig(logger *Logger) (*Config, error) {
 	// Set defaults for reply functionality
 	if config.ReplyPrompt == "" {
 		config.ReplyPrompt = "Enter your response (or press Enter to continue): "
+	}
+
+	// Set default for agent functionality
+	if config.AgentType == "" && config.UseAgents {
+		config.AgentType = BackendDeveloper // Default to backend developer
 	}
 
 	logger.Debug("Loaded configuration from '%s'", configFile)
@@ -339,6 +442,9 @@ func main() {
 	var debug bool
 	var backup bool
 	var restore bool
+	var agentType string
+	var useAgents bool
+	var listAgents bool
 
 	flag.BoolVar(&help, "h", false, "Show help message")
 	flag.BoolVar(&help, "help", false, "Show help message")
@@ -347,7 +453,16 @@ func main() {
 	flag.BoolVar(&debug, "debug", false, "Enable debug output (implies -v)")
 	flag.BoolVar(&backup, "backup", false, "Backup progress before running")
 	flag.BoolVar(&restore, "restore", false, "Restore progress from latest backup and exit")
+	flag.StringVar(&agentType, "agent", "", "Specify agent type (tester, debugger, researcher, backend-developer, frontend-developer, ux, ui, marketer, feedbackseeker, simplifier, documentationwriter)")
+	flag.BoolVar(&useAgents, "use-agents", false, "Enable multi-agent mode")
+	flag.BoolVar(&listAgents, "list-agents", false, "List all available agent types")
 	flag.Parse()
+
+	// List agents if requested
+	if listAgents {
+		listAvailableAgents()
+		return
+	}
 
 	// Show help if requested
 	if help {
@@ -415,6 +530,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Override config with command line agent settings
+	if useAgents {
+		config.UseAgents = true
+	}
+	if agentType != "" {
+		config.AgentType = AgentType(agentType)
+		config.UseAgents = true
+	}
+
+	// Validate agent type if specified
+	if config.UseAgents && config.AgentType != "" {
+		if _, err := GetAgentPrompt(config.AgentType); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Invalid agent type '%s'. Use -list-agents to see available types.\n", config.AgentType)
+			os.Exit(1)
+		}
+	}
+
 	// Validate feedback loops and required files
 	if err := validateFeedbackLoops(logger); err != nil {
 		fmt.Fprintf(os.Stderr, "Error validating feedback loops: %v\n", err)
@@ -432,29 +564,40 @@ func main() {
 	for i := 1; i <= iterations; i++ {
 		fmt.Printf("Running iteration %d/%d...\n", i, iterations)
 
-		// Build the opencode command
-		args := []string{"run", "--model", "opencode/big-pickle"}
-		if debug {
-			args = append(args, "--print-logs")
+		var err error
+		output := ""
+
+		if config.UseAgents && config.AgentType != "" {
+			// Run using agent mode
+			fmt.Printf("Using %s agent...\n", config.AgentType)
+			err = runAgent(logger, config.AgentType, config.PromptCommand, debug)
+		} else {
+			// Run using traditional mode
+			args := []string{"run", "--model", "opencode/big-pickle"}
+			if debug {
+				args = append(args, "--print-logs")
+			}
+			args = append(args, config.PromptCommand)
+			cmd := exec.Command("opencode", args...)
+			cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
+
+			// Set up output capture for tee reader functionality
+			var outputBuffer bytes.Buffer
+			var writer io.Writer = &outputBuffer
+
+			if verbose {
+				// Use MultiWriter to capture output while displaying it
+				writer = io.MultiWriter(&outputBuffer, os.Stdout)
+			}
+
+			cmd.Stdout = writer
+			cmd.Stderr = writer
+
+			// Run the command
+			err = cmd.Run()
+			output = outputBuffer.String()
 		}
-		args = append(args, config.PromptCommand)
-		cmd := exec.Command("opencode", args...)
-		cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
 
-		// Set up output capture for tee reader functionality
-		var outputBuffer bytes.Buffer
-		var writer io.Writer = &outputBuffer
-
-		if verbose {
-			// Use MultiWriter to capture output while displaying it
-			writer = io.MultiWriter(&outputBuffer, os.Stdout)
-		}
-
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-
-		// Run the command
-		err := cmd.Run()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error in iteration %d: %v\n", i, err)
 			if i == iterations {
@@ -464,7 +607,6 @@ func main() {
 		}
 
 		// Check for completion from captured output
-		output := outputBuffer.String()
 		if strings.Contains(output, "✅ Complete ✅") {
 			fmt.Println("✅ All tasks completed!")
 			// Send webhook notification for early completion
@@ -599,6 +741,18 @@ func restoreProgress(logger *Logger) error {
 	return nil
 }
 
+func listAvailableAgents() {
+	fmt.Printf("Available Agent Types:\n\n")
+
+	prompts := GetAgentPrompts()
+	for _, agentType := range ListAgentTypes() {
+		prompt := prompts[agentType]
+		fmt.Printf("  %-20s - %s\n", prompt.Name, prompt.Description)
+	}
+
+	fmt.Printf("\nUsage: ralph -agent <agent-type>\n")
+}
+
 func showHelp() {
 	fmt.Printf(`Ralph Wiggum - Simple Autonomous AI Coding Loop
 
@@ -612,21 +766,29 @@ USAGE:
     -n N            Number of iterations to run (default: 10)
     -backup         Backup progress.txt before running
     -restore        Restore progress.txt from latest backup and exit
+    -agent TYPE     Use specific agent type (see -list-agents for available types)
+    -use-agents     Enable multi-agent mode
+    -list-agents    List all available agent types and their descriptions
 
-EXAMPLES:
-    ralph           # Run 10 iterations
+ EXAMPLES:
+    ralph           # Run 10 iterations with default behavior
     ralph 5         # Run 5 iterations  
     ralph -n 20 -v  # Run 20 iterations with verbose output
     ralph -debug    # Run with debug output (shows opencode logs)
+    ralph -agent tester  # Run using the tester agent
+    ralph -list-agents  # Show all available agent types
     ralph -h        # Show this help
 
-REQUIRED FILES:
+ REQUIRED FILES:
     - tasks.md      Task definitions
     - progress.txt  Progress tracking
     - prompt.md     AI execution prompt
 
-OPTIONAL FILES:
-    - config.json   Custom prompt command
+ OPTIONAL FILES:
+    - config.json   Custom prompt command and agent settings
+
+ AGENT TYPES:
+    Use -list-agents to see all available agent types and their descriptions.
 
 `)
 }
