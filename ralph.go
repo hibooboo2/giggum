@@ -110,12 +110,51 @@ func (l *Logger) Error(msg string, args ...any) {
 
 // createAgentPrompt creates a prompt for a specific agent type
 func createAgentPrompt(agentType AgentType, task string) (string, error) {
-	prompt, err := GetAgentPrompt(agentType)
+	_, taskPrompt, err := getAgentPrompts(agentType, task)
 	if err != nil {
 		return "", fmt.Errorf("failed to get agent prompt: %v", err)
 	}
+	return taskPrompt, nil
+}
 
-	return fmt.Sprintf(prompt.TaskPrompt, task), nil
+// getAgentPrompts gets both system and task prompts for a specific agent type
+func getAgentPrompts(agentType AgentType, task string) (string, string, error) {
+	// Try to get the current working directory for database access
+	projectPath, err := os.Getwd()
+	if err != nil {
+		// Fallback to hardcoded prompts if we can't get current directory
+		prompt, err := GetAgentPrompt(agentType)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get agent prompt: %v", err)
+		}
+		return prompt.SystemPrompt, fmt.Sprintf(prompt.TaskPrompt, task), nil
+	}
+
+	// Try to get prompt from database
+	dbPath := GetProjectDBPath(projectPath)
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		// Fallback to hardcoded prompts if database fails
+		prompt, err := GetAgentPrompt(agentType)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get agent prompt: %v", err)
+		}
+		return prompt.SystemPrompt, fmt.Sprintf(prompt.TaskPrompt, task), nil
+	}
+	defer dbManager.Close()
+
+	// Try to get stored prompt from database
+	prompt, err := dbManager.GetStoredAgentPrompt(agentType)
+	if err != nil {
+		// Fallback to hardcoded prompts if not found in database
+		prompt, err := GetAgentPrompt(agentType)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to get agent prompt: %v", err)
+		}
+		return prompt.SystemPrompt, fmt.Sprintf(prompt.TaskPrompt, task), nil
+	}
+
+	return prompt.SystemPrompt, fmt.Sprintf(prompt.TaskPrompt, task), nil
 }
 
 // runAgent executes a task using a specific agent type
@@ -145,10 +184,10 @@ func runAgent(logger *Logger, agentType AgentType, task string, debug bool) erro
 		}
 	}
 
-	// Create agent-specific prompt
-	agentPrompt, err := createAgentPrompt(agentType, task)
+	// Get agent prompts (system and task)
+	agentSystemPrompt, agentTaskPrompt, err := getAgentPrompts(agentType, task)
 	if err != nil {
-		return fmt.Errorf("failed to create agent prompt: %v", err)
+		return fmt.Errorf("failed to get agent prompts: %v", err)
 	}
 
 	logger.Info("Running %s agent for task: %s", agentType, task)
@@ -160,8 +199,7 @@ func runAgent(logger *Logger, agentType AgentType, task string, debug bool) erro
 	}
 
 	// Combine the system prompt with the task prompt
-	agentPromptInfo, _ := GetAgentPrompt(agentType)
-	fullPrompt := fmt.Sprintf("%s\n\n%s", agentPromptInfo.SystemPrompt, agentPrompt)
+	fullPrompt := fmt.Sprintf("%s\n\n%s", agentSystemPrompt, agentTaskPrompt)
 	args = append(args, fullPrompt)
 
 	cmd := exec.Command("opencode", args...)

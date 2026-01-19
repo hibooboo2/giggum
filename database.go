@@ -41,6 +41,11 @@ func NewDBManager(dbPath string) (*DBManager, error) {
 		return nil, fmt.Errorf("failed to initialize tables: %v", err)
 	}
 
+	// Initialize default prompts
+	if err := manager.InitializeDefaultPrompts(); err != nil {
+		return nil, fmt.Errorf("failed to initialize default prompts: %v", err)
+	}
+
 	return manager, nil
 }
 
@@ -94,7 +99,20 @@ func (m *DBManager) initTables() error {
 		metadata TEXT
 	)`
 
-	tables := []string{sessionsTable, progressTable, ioTable, metadataTable}
+	// Create agent_prompts table for storing agent personality prompts
+	promptsTable := `
+	CREATE TABLE IF NOT EXISTS agent_prompts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_type TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL,
+		description TEXT NOT NULL,
+		system_prompt TEXT NOT NULL,
+		task_prompt TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`
+
+	tables := []string{sessionsTable, progressTable, ioTable, metadataTable, promptsTable}
 
 	for _, table := range tables {
 		if _, err := m.db.Exec(table); err != nil {
@@ -469,4 +487,83 @@ func (m *DBManager) GetProjectStats(projectPath string) (map[string]interface{},
 	stats["progress"] = progressStats
 
 	return stats, nil
+}
+
+// StoreAgentPrompt stores or updates an agent prompt in the database
+func (m *DBManager) StoreAgentPrompt(prompt AgentPrompt) error {
+	query := `
+	INSERT OR REPLACE INTO agent_prompts 
+	(agent_type, name, description, system_prompt, task_prompt, updated_at)
+	VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+
+	_, err := m.db.Exec(query, string(prompt.Type), prompt.Name, prompt.Description, prompt.SystemPrompt, prompt.TaskPrompt)
+	if err != nil {
+		return fmt.Errorf("failed to store agent prompt: %v", err)
+	}
+
+	return nil
+}
+
+// GetStoredAgentPrompt retrieves an agent prompt from the database
+func (m *DBManager) GetStoredAgentPrompt(agentType AgentType) (AgentPrompt, error) {
+	query := `
+	SELECT agent_type, name, description, system_prompt, task_prompt
+	FROM agent_prompts
+	WHERE agent_type = ?`
+
+	row := m.db.QueryRow(query, string(agentType))
+
+	var prompt AgentPrompt
+	err := row.Scan(&prompt.Type, &prompt.Name, &prompt.Description, &prompt.SystemPrompt, &prompt.TaskPrompt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return AgentPrompt{}, fmt.Errorf("agent prompt for type %s not found", agentType)
+		}
+		return AgentPrompt{}, fmt.Errorf("failed to retrieve agent prompt: %v", err)
+	}
+
+	return prompt, nil
+}
+
+// GetAllStoredAgentPrompts retrieves all agent prompts from the database
+func (m *DBManager) GetAllStoredAgentPrompts() (map[AgentType]AgentPrompt, error) {
+	query := `
+	SELECT agent_type, name, description, system_prompt, task_prompt
+	FROM agent_prompts`
+
+	rows, err := m.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query agent prompts: %v", err)
+	}
+	defer rows.Close()
+
+	prompts := make(map[AgentType]AgentPrompt)
+	for rows.Next() {
+		var prompt AgentPrompt
+		err := rows.Scan(&prompt.Type, &prompt.Name, &prompt.Description, &prompt.SystemPrompt, &prompt.TaskPrompt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan prompt row: %v", err)
+		}
+		prompts[prompt.Type] = prompt
+	}
+
+	return prompts, rows.Err()
+}
+
+// InitializeDefaultPrompts stores the default agent prompts in the database
+func (m *DBManager) InitializeDefaultPrompts() error {
+	defaultPrompts := GetAgentPrompts()
+
+	for agentType, prompt := range defaultPrompts {
+		// Check if prompt already exists
+		_, err := m.GetStoredAgentPrompt(agentType)
+		if err != nil {
+			// Prompt doesn't exist, store it
+			if err := m.StoreAgentPrompt(prompt); err != nil {
+				return fmt.Errorf("failed to initialize prompt for %s: %v", agentType, err)
+			}
+		}
+	}
+
+	return nil
 }
