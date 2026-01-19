@@ -1,1 +1,5 @@
 2025-01-18: Used loadConfig function in main() instead of inline config loading to eliminate code duplication
+2025-01-18: Integrated all unused functions in ralph.go:
+- Added validateFeedbackLoops() call to verify system requirements
+- Added backup/restore progress functionality with -backup and -restore flags
+- Updated help text to document new options

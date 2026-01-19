@@ -27,7 +27,7 @@ type Config struct {
 }
 
 // DefaultPromptCommand is the default prompt command if not specified in config
-const DefaultPromptCommand = "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md"
+const DefaultPromptCommand = "@tasks.md @progress.txt @prompt.md Follow the instrunctions in prompt.md"
 
 // NewLogger creates a new logger instance using slog
 func NewLogger(logLevel string, verbose bool, logFilePath string) (*Logger, error) {
@@ -139,17 +139,37 @@ func main() {
 	var iterations int
 	var verbose bool
 	var debug bool
+	var backup bool
+	var restore bool
 
 	flag.BoolVar(&help, "h", false, "Show help message")
 	flag.BoolVar(&help, "help", false, "Show help message")
 	flag.IntVar(&iterations, "n", 10, "Number of iterations to run")
 	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
 	flag.BoolVar(&debug, "debug", false, "Enable debug output (implies -v)")
+	flag.BoolVar(&backup, "backup", false, "Backup progress before running")
+	flag.BoolVar(&restore, "restore", false, "Restore progress from latest backup and exit")
 	flag.Parse()
 
 	// Show help if requested
 	if help {
 		showHelp()
+		return
+	}
+
+	// Handle restore flag
+	if restore {
+		logger, err := NewLogger("INFO", verbose, "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating logger: %v\n", err)
+			os.Exit(1)
+		}
+		defer logger.Close()
+
+		if err := restoreProgress(logger); err != nil {
+			fmt.Fprintf(os.Stderr, "Error restoring progress: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -195,6 +215,19 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Validate feedback loops and required files
+	if err := validateFeedbackLoops(logger); err != nil {
+		fmt.Fprintf(os.Stderr, "Error validating feedback loops: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Backup progress if requested
+	if backup {
+		if err := backupProgress(logger); err != nil {
+			logger.Warn("Failed to backup progress: %v", err)
+		}
 	}
 
 	// Run the autonomous coding loop
@@ -366,11 +399,13 @@ func showHelp() {
 USAGE:
     ralph [OPTIONS] [ITERATIONS]
 
-OPTIONS:
+ OPTIONS:
     -h, --help      Show this help message
     -v              Enable verbose output (shows colorized opencode output)
     -debug          Enable debug output (implies -v, adds --print-logs to opencode)
     -n N            Number of iterations to run (default: 10)
+    -backup         Backup progress.txt before running
+    -restore        Restore progress.txt from latest backup and exit
 
 EXAMPLES:
     ralph           # Run 10 iterations
