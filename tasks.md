@@ -1,0 +1,1 @@
+- refactor and splitup / simplify ralph.go do not remove any functionality.
