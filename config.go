@@ -8,14 +8,15 @@ import (
 )
 
 // Config holds the configuration for the Ralph Wiggum loop
+// Note: This system uses AGENT-ONLY execution - no traditional execution paths exist
 type Config struct {
 	PromptCommand string    `json:"prompt_command"`
 	WebhookURL    string    `json:"webhook_url"`
 	ParseReply    bool      `json:"wait_for_reply"`
 	ReplyPrompt   string    `json:"reply_prompt"`
 	AddToTasks    bool      `json:"add_to_tasks"`
-	AgentType     AgentType `json:"agent_type,omitempty"`
-	UseAgents     bool      `json:"use_agents"`
+	AgentType     AgentType `json:"agent_type"`
+	UseAgents     bool      `json:"use_agents"` // DEPRECATED: Always true for agent-only execution
 	// Future configuration options can be added here
 }
 
@@ -34,8 +35,8 @@ func loadConfig(logger *Logger) (*Config, error) {
 			ParseReply:    false,
 			ReplyPrompt:   "Enter your response (or press Enter to continue): ",
 			AddToTasks:    true,
-			UseAgents:     false,
-			AgentType:     "",
+			UseAgents:     true,             // Agent-only execution enforced
+			AgentType:     BackendDeveloper, // Default to BackendDeveloper
 		}, nil
 	}
 
@@ -61,10 +62,14 @@ func loadConfig(logger *Logger) (*Config, error) {
 		config.ReplyPrompt = "Enter your response (or press Enter to continue): "
 	}
 
-	// Set default for agent functionality
-	if config.AgentType == "" && config.UseAgents {
+	// Enforce agent-only execution - no traditional execution paths
+	if config.AgentType == "" {
 		config.AgentType = BackendDeveloper // Default to backend developer
 	}
+	// Force agent-only execution - traditional execution is not supported
+	config.UseAgents = true
+
+	logger.Info("Agent-only execution enforced: %s agent selected", config.AgentType)
 
 	logger.Debug("Loaded configuration from '%s'", configFile)
 

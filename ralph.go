@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
-	"strings"
 )
 
 type CLIArgs struct {
@@ -18,7 +15,6 @@ type CLIArgs struct {
 	backup       bool
 	restore      bool
 	agentType    string
-	useAgents    bool
 	listAgents   bool
 	showProgress bool
 	multiAgent   bool
@@ -35,8 +31,7 @@ func parseFlags() CLIArgs {
 	flag.BoolVar(&args.debug, "debug", false, "Enable debug output (implies -v)")
 	flag.BoolVar(&args.backup, "backup", false, "Backup progress before running")
 	flag.BoolVar(&args.restore, "restore", false, "Restore progress from latest backup and exit")
-	flag.StringVar(&args.agentType, "agent", "", "Specify agent type (tester, debugger, researcher, backend-developer, frontend-developer, ux, ui, marketer, feedbackseeker, simplifier, documentationwriter)")
-	flag.BoolVar(&args.useAgents, "use-agents", false, "Enable multi-agent mode")
+	flag.StringVar(&args.agentType, "agent", "backend-developer", "Specify agent type (tester, debugger, researcher, backend-developer, frontend-developer, ux, ui, marketer, feedbackseeker, simplifier, documentationwriter). Agent-only execution is enforced.")
 	flag.BoolVar(&args.listAgents, "list-agents", false, "List all available agent types")
 	flag.BoolVar(&args.showProgress, "show-progress", false, "Show agent progress for current project")
 	flag.BoolVar(&args.multiAgent, "multi-agent", false, "Run coordinated multi-agent session")
@@ -64,58 +59,39 @@ func validateEnvironment() error {
 }
 
 func runIterations(logger *Logger, config Config, iterations int, debug bool) {
+	// Agent-only execution - validate agent type exists
+	if config.AgentType == "" {
+		config.AgentType = BackendDeveloper
+	}
+
 	for i := 1; i <= iterations; i++ {
-		fmt.Printf("Running iteration %d/%d...\n", i, iterations)
+		fmt.Printf("Running iteration %d/%d with %s agent...\n", i, iterations, config.AgentType)
 
-		var err error
-		output := ""
-
-		if config.UseAgents && config.AgentType != "" {
-			// Run using agent mode
-			fmt.Printf("Using %s agent...\n", config.AgentType)
-			err = runAgent(logger, config.AgentType, config.PromptCommand, debug)
-		} else {
-			// Run using traditional mode
-			args := []string{"run", "--model", "opencode/big-pickle"}
-			if debug {
-				args = append(args, "--print-logs")
-			}
-			args = append(args, config.PromptCommand)
-			cmd := exec.Command("opencode", args...)
-
-			// Set up output capture for tee reader functionality
-			var outputBuffer bytes.Buffer
-			var writer io.Writer = &outputBuffer
-
-			if logger.verbose {
-				// Use MultiWriter to capture output while displaying it
-				writer = io.MultiWriter(&outputBuffer, os.Stdout)
-			}
-
-			cmd.Stdout = writer
-			cmd.Stderr = writer
-
-			// Run the command
-			err = cmd.Run()
-			output = outputBuffer.String()
-		}
+		// Execute using agent only - no traditional execution path
+		err := runAgentWithOutputCapture(logger, config.AgentType, config.PromptCommand, debug)
 
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error in iteration %d: %v\n", i, err)
+			if err.Error() == "COMPLETED" {
+				// Send webhook notification for early completion
+				if webhookErr := sendWebhookNotification(logger, config, i, true); webhookErr != nil {
+					logger.Warn("Failed to send webhook notification: %v", webhookErr)
+				}
+				return // Exit early since tasks are complete
+			}
+
+			// Enhanced error handling for agent-only execution
+			logger.Error("Agent execution failed in iteration %d: %v", i, err)
+			logger.Error("Agent type: %s, Task: %s", config.AgentType, config.PromptCommand)
+
+			fmt.Fprintf(os.Stderr, "Error in iteration %d with %s agent: %v\n", i, config.AgentType, err)
+			fmt.Fprintf(os.Stderr, "Note: This system uses agent-only execution - no fallback mode available.\n")
+
 			if i == iterations {
+				logger.Error("Final iteration failed, terminating")
 				os.Exit(1)
 			}
+			logger.Info("Continuing to next iteration...")
 			continue
-		}
-
-		// Check for completion from captured output
-		if strings.Contains(output, "✅ Complete ✅") {
-			fmt.Println("✅ All tasks completed!")
-			// Send webhook notification for early completion
-			if err := sendWebhookNotification(logger, config, i, true); err != nil {
-				logger.Warn("Failed to send webhook notification: %v", err)
-			}
-			return // Exit early since tasks are complete
 		}
 	}
 }
@@ -195,13 +171,16 @@ func main() {
 	}
 
 	// Override config with command line agent settings
-	if args.useAgents {
-		config.UseAgents = true
-	}
+	// Agent-only execution enforced - no traditional execution mode available
+	config.UseAgents = true
 	if args.agentType != "" {
 		config.AgentType = AgentType(args.agentType)
-		config.UseAgents = true
+	} else if config.AgentType == "" {
+		// Ensure we have a default agent type if none was specified in config or CLI
+		config.AgentType = BackendDeveloper
 	}
+
+	logger.Info("CLI: Agent-only execution enforced with %s agent", config.AgentType)
 
 	// Handle multi-agent mode
 	if args.multiAgent {
@@ -212,12 +191,15 @@ func main() {
 		return
 	}
 
-	// Validate agent type if specified
-	if config.UseAgents && config.AgentType != "" {
+	// Validate agent type - always required since we use agent-only execution
+	if config.AgentType != "" {
 		if _, err := GetAgentPrompt(config.AgentType); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Invalid agent type '%s'. Use -list-agents to see available types.\n", config.AgentType)
+			logger.Error("Invalid agent type '%s': %v", config.AgentType, err)
+			fmt.Fprintf(os.Stderr, "Error: Invalid agent type '%s'. This system requires agent-only execution.\n", config.AgentType)
+			fmt.Fprintf(os.Stderr, "Use -list-agents to see available agent types.\n")
 			os.Exit(1)
 		}
+		logger.Info("Agent type '%s' validated successfully", config.AgentType)
 	}
 
 	// Validate feedback loops
