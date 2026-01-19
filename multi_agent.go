@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -81,7 +82,7 @@ func showAgentProgress() {
 			switch p.Status {
 			case "completed":
 				statusIcon = "✅"
-			case "in_progress":
+			case "in_progress", "debugging":
 				statusIcon = "🔄"
 			case "failed":
 				statusIcon = "❌"
@@ -100,21 +101,6 @@ func showAgentProgress() {
 
 // runMultiAgentSession coordinates multiple agents to work on tasks
 func runMultiAgentSession(logger *Logger, config Config, iterations int, debug bool) error {
-	// Read tasks.md to get the list of tasks
-	tasksContent, err := os.ReadFile("tasks_parsed.md")
-	if err != nil {
-		err := runAgent(logger, Researcher, "read @tasks.md add metadata for each task expand a little sort them by priority and then write it to @tasks_parsed.md each line should contain one task that has sightly more info than the original task, organize in sections if needed sections should start with <section> and end with a </section> make sure there are no areas of code that do not have a section tag", debug)
-		if err != nil {
-			return fmt.Errorf("failed to run task parsing")
-		}
-	}
-
-	// Parse tasks from file
-	tasks := parseTasks(string(tasksContent))
-	if len(tasks) == 0 {
-		return fmt.Errorf("no tasks found in tasks_parsed.md")
-	}
-
 	// Define agent priorities for different task types
 	agentPriority := []AgentType{
 		BackendDeveloper,
@@ -130,29 +116,58 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 		Simplifier,
 	}
 
+	tasks, err := taskManager.GetAllTasks()
+	if err != nil {
+		return fmt.Errorf("failed to get tasks: %w", err)
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return getPriorityNum(tasks[i].Priority) > getPriorityNum(tasks[j].Priority)
+	})
 	fmt.Printf("Starting multi-agent session with %d tasks\n", len(tasks))
 
 	for i := 0; i < iterations && i < len(tasks); i++ {
 		task := tasks[i]
+		if task.Status == "completed" {
+			continue
+		}
 
 		// Determine the best agent for this task
-		agentType := selectBestAgentForTask(task, agentPriority)
+		agentType := selectBestAgentForTask(task.Title+task.Description, agentPriority)
 
-		fmt.Printf("Iteration %d/%d: Using %s agent for task: %s\n",
-			i+1, iterations, agentType, task)
+		if task.Status == "failed" {
+			agentType = Researcher
+			task.Description += " This task has ben tried before by 2 other people and they have failed. Please do some reseaerch to see what is wrong when attempting this task and create a report on why the task failed."
+		}
+
+		fmt.Printf("Iteration %d/%d: Using %s agent for task: %+v\n", i+1, iterations, agentType, task)
 
 		// Run the agent
-		err := runAgent(logger, agentType, "Please follow the instructions in @prompt.md Task: "+task, debug)
+		err = taskManager.UpdateTaskStatus(task.ID, "in_progress")
+		if err != nil {
+			logger.Error("Failed to update task status:", err)
+			continue
+		}
+
+		err := runAgent(logger, agentType, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v```", task), debug)
 		if err != nil {
 			logger.Warn("Agent %s failed on task '%s': %v", agentType, task, err)
+			taskManager.UpdateTaskStatus(task.ID, "debugging")
 			// Try with a different agent as fallback
 			if agentType != Debugger {
 				fmt.Printf("Retrying with Debugger agent...\n")
-				err := runAgent(logger, Debugger, task, debug)
+				err := runAgent(logger, Debugger, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v``` keep in mind your collegue just tried to do this and left the repo in a state that needs to be fixed", task), debug)
 				if err != nil {
 					logger.Error("Debugger also failed on task '%s': %v", task, err)
+					taskManager.UpdateTaskStatus(task.ID, "failed")
+					continue
 				}
 			}
+		}
+
+		err = taskManager.UpdateTaskStatus(task.ID, "completed")
+		if err != nil {
+			logger.Error("Failed to update task status:", err)
+			continue
 		}
 
 		if webhookErr := sendWebhookNotification(logger, config, i, true); webhookErr != nil {
@@ -426,7 +441,7 @@ func showHelp() {
     -multi-agent    Run coordinated multi-agent session
     -list-agents    List all available agent types and their descriptions
     -show-progress  Show agent progress for current project
-    -task CMD       Task management command (list, stats, import)
+    -task CMD       Task management command (list, create, add, remove, stats, import)
 
  EXAMPLES:
     ralph           # Run 10 iterations with default backend-developer agent
@@ -437,9 +452,12 @@ func showHelp() {
     ralph -multi-agent   # Run coordinated multi-agent session
     ralph -show-progress # Show agent progress
     ralph -list-agents  # Show all available agent types
-    ralph -task list     # List all tasks from database
-    ralph -task stats    # Show task statistics
-    ralph -task import   # Import tasks from tasks.md file
+     ralph -task list     # List all tasks from database
+     ralph -task create    # Create task interactively
+     ralph -task add "task description"  # Add task using researcher agent
+     ralph -task remove   # Remove task interactively
+     ralph -task stats    # Show task statistics
+     ralph -task import   # Import tasks from tasks.md file
     ralph -h        # Show this help
 
  REQUIRED FILES:

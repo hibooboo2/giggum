@@ -186,6 +186,7 @@ func (tm *TaskManager) GetAllTasks() ([]Task, error) {
 	query := `
 	SELECT id, title, description, status, priority, created_at, updated_at, completed_at, tags, metadata
 	FROM tasks
+	WHERE status != 'completed'
 	ORDER BY priority DESC, created_at ASC`
 
 	rows, err := tm.db.Query(query)
@@ -391,6 +392,30 @@ func (tm *TaskManager) parseTaskLine(line string) *Task {
 		Priority: priority,
 		Status:   "pending",
 	}
+}
+
+// UpdateTaskMetadata updates tags and metadata for a task
+func (tm *TaskManager) UpdateTaskMetadata(id int64, tags, metadata string) error {
+	query := `
+	UPDATE tasks 
+	SET tags = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
+	WHERE id = ?`
+
+	result, err := tm.db.Exec(query, tags, metadata, id)
+	if err != nil {
+		return fmt.Errorf("failed to update task metadata: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("task not found: %d", id)
+	}
+
+	return nil
 }
 
 // GetTasksByStatus retrieves tasks filtered by status
