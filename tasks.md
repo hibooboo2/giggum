@@ -1,1 +1,10 @@
-# test content
+- create giggum task add which will add task using interactive questions to make high quality tasks with metadata to store in the giggum project database(this is the db in the root of the current git repo)
+- Use sqlite to store tasks
+- select from sqlite tasks to do next based on metadata search using task metadata
+- giggum task list to list all created tasks
+- when giggum finishes a task it should update that it is done in the db with the commit that implemented the fix feature or task. 
+- make it so that giggum gets the task from the sqlite db first then uses that as part of the user prompt on each iteration. So that each iteration has a new task selected from the db that is not finished. If there are not tasks then we exit.
+- early exit if there are no tasks
+- giggum task list (should list all the tasks for the current repo)
+- ensure that there are no md files ever being read by giggum its always prompts from the defaults or from the giggum database. 
+- when all tasks are done run one more iteration using the tester agent with a prompt to test all the new tasks
