@@ -36,6 +36,20 @@ func addTaskFromRawString(taskManager *TaskManager) error {
 	}
 
 	rawTask := strings.Join(flag.Args(), " ")
+	return addTaskFromRawTaskString(taskManager, rawTask)
+}
+
+func addTaskFromCobraArgs(taskManager *TaskManager, args []string) error {
+	// Get the raw task string from Cobra arguments
+	if len(args) < 1 {
+		return fmt.Errorf("task add requires a task string. Usage: giggum task add \"your task description\"")
+	}
+
+	rawTask := strings.Join(args, " ")
+	return addTaskFromRawTaskString(taskManager, rawTask)
+}
+
+func addTaskFromRawTaskString(taskManager *TaskManager, rawTask string) error {
 	if strings.TrimSpace(rawTask) == "" {
 		return fmt.Errorf("task string cannot be empty")
 	}
@@ -519,6 +533,14 @@ func removeTaskInteractively(taskManager *TaskManager) error {
 func setTaskProperties(taskManager *TaskManager) error {
 	// Parse command line arguments using flag.Args() which gives all args after flags
 	args := flag.Args()
+	return setTaskFromArgs(taskManager, args)
+}
+
+func setTaskFromCobraArgs(taskManager *TaskManager, args []string) error {
+	return setTaskFromArgs(taskManager, args)
+}
+
+func setTaskFromArgs(taskManager *TaskManager, args []string) error {
 
 	// If no arguments provided, show usage
 	if len(args) < 2 {
