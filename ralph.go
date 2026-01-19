@@ -25,7 +25,7 @@ type Config struct {
 }
 
 // DefaultPromptCommand is the default prompt command if not specified in config
-const DefaultPromptCommand = "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md"
+const DefaultPromptCommand = "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md"
 
 // NewLogger creates a new logger instance using slog
 func NewLogger(logLevel string, verbose bool, logFilePath string) (*Logger, error) {
@@ -132,25 +132,15 @@ func loadConfig(logger *Logger) (*Config, error) {
 }
 
 func main() {
-	// Define command line flags
+	// Define simple command line flags
 	var help bool
-	var verbose bool
-	var debug bool
 	var iterations int
-	var backup bool
-	var restore bool
-	var logLevel string
-	var logFile string
+	var verbose bool
 
 	flag.BoolVar(&help, "h", false, "Show help message")
 	flag.BoolVar(&help, "help", false, "Show help message")
-	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
-	flag.BoolVar(&debug, "debug", false, "Enable debug output (implies -v)")
 	flag.IntVar(&iterations, "n", 10, "Number of iterations to run")
-	flag.BoolVar(&backup, "backup", false, "Create backup of progress.txt before starting")
-	flag.BoolVar(&restore, "restore", false, "Restore progress.txt from latest backup")
-	flag.StringVar(&logLevel, "log-level", "INFO", "Set logging level (DEBUG, INFO, WARN, ERROR)")
-	flag.StringVar(&logFile, "log-file", "", "Write logs to file (default: stdout only)")
+	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
 	flag.Parse()
 
 	// Show help if requested
@@ -159,62 +149,22 @@ func main() {
 		return
 	}
 
-	// Set up logging
-	debug = debug || verbose
-	if debug {
-		verbose = true
-		logLevel = "DEBUG"
-	}
-
-	// Create logger
-	logger, err := NewLogger(logLevel, verbose, logFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create logger: %v\n", err)
+	// Validate opencode CLI exists
+	if _, err := exec.LookPath("opencode"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: opencode CLI not found. Please install it first.\n")
 		os.Exit(1)
 	}
-	defer logger.Close()
 
-	logger.Info("Ralph Wiggum starting up", "iterations", iterations, "logLevel", logLevel, "logFile", logFile)
-
-	// Handle restore flag
-	if restore {
-		logger.Info("Restoring progress from backup")
-		if err := restoreProgress(logger); err != nil {
-			logger.Error("Restore failed: %v", err)
+	// Validate required files exist
+	requiredFiles := []string{"tasks.md", "progress.txt", "prompt.md"}
+	for _, file := range requiredFiles {
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Error: Required file '%s' not found.\n", file)
 			os.Exit(1)
 		}
-		logger.Info("Restore completed successfully")
-		return
 	}
 
-	// Create backup if requested
-	if backup {
-		logger.Info("Creating backup of progress.txt")
-		if err := backupProgress(logger); err != nil {
-			logger.Error("Backup failed: %v", err)
-			os.Exit(1)
-		}
-		logger.Info("Backup created successfully")
-	}
-
-	// Load configuration
-	logger.Debug("Loading configuration")
-	config, err := loadConfig(logger)
-	if err != nil {
-		logger.Error("Configuration loading failed: %v", err)
-		os.Exit(1)
-	}
-	logger.Debug("Configuration loaded successfully")
-
-	// Enhanced feedback loop validation
-	logger.Debug("Validating feedback loops")
-	if err := validateFeedbackLoops(logger); err != nil {
-		logger.Error("Feedback loop validation failed: %v", err)
-		os.Exit(1)
-	}
-	logger.Debug("Feedback loop validation passed")
-
-	// Parse remaining arguments for iteration count
+	// Parse iteration count from argument if provided
 	if flag.NArg() > 0 {
 		var parsedIterations int
 		_, err := fmt.Sscanf(flag.Arg(0), "%d", &parsedIterations)
@@ -223,102 +173,49 @@ func main() {
 		}
 	}
 
+	// Load configuration (optional)
+	config := &Config{PromptCommand: DefaultPromptCommand}
+	if content, err := os.ReadFile("config.json"); err == nil {
+		json.Unmarshal(content, config)
+		if config.PromptCommand == "" {
+			config.PromptCommand = DefaultPromptCommand
+		}
+	}
+
 	// Run the autonomous coding loop
 	for i := 1; i <= iterations; i++ {
 		fmt.Printf("Running iteration %d/%d...\n", i, iterations)
 
-		// Build the opencode command
-		args := []string{"run", "--model", "opencode/big-pickle"}
-		if verbose {
-			args = append(args, "--print-logs")
-		}
-		args = append(args, config.PromptCommand)
-
+		// Build and run the opencode command
+		args := []string{"run", "--model", "opencode/big-pickle", config.PromptCommand}
 		cmd := exec.Command("opencode", args...)
+		cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
 
-		// Inherit environment variables from current process
-		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env, "OPENAI_BASE_URL=http://100.83.162.29:1234")
+		if verbose {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		} else {
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+		}
 
-		// Set up output streams
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-
-		// Run the command
 		err := cmd.Run()
-
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error running opencode on iteration %d: %v\n", i, err)
-
-			// Check if it's a network connectivity issue
-			if strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "network") {
-				fmt.Fprintf(os.Stderr, "Network error detected. Please check your internet connection.\n")
-			}
-
-			// Continue to next iteration instead of exiting immediately
+			fmt.Fprintf(os.Stderr, "Error in iteration %d: %v\n", i, err)
 			if i == iterations {
-				fmt.Fprintf(os.Stderr, "Final iteration failed. Exiting.\n")
 				os.Exit(1)
 			}
 			continue
 		}
 
-		// For verbose mode, we want to capture and also show the output
-		if verbose {
-			args := []string{"run", "--model", "opencode/big-pickle", "--print-logs", config.PromptCommand}
-			cmdVerbose := exec.Command("opencode", args...)
+		// Check for completion
+		checkCmd := exec.Command("opencode", "run", "--model", "opencode/big-pickle", config.PromptCommand)
+		checkCmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
+		output, _ := checkCmd.CombinedOutput()
 
-			// Inherit environment variables from current process
-			cmdVerbose.Env = os.Environ()
-			cmdVerbose.Env = append(cmdVerbose.Env, "OPENAI_BASE_URL=http://100.83.162.29:1234")
-
-			// Capture output for verbose display
-			output, err := cmdVerbose.CombinedOutput()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error capturing verbose output on iteration %d: %v\n", i, err)
-				continue
-			}
-
-			result := string(output)
-			if len(result) == 0 {
-				fmt.Printf("Warning: No output received from opencode on iteration %d\n", i)
-				continue
-			}
-
-			fmt.Printf("Opencode output received (%d bytes)\n", len(result))
-			fmt.Println(result)
-		}
-
-		// For completion signal and error checking, we need to capture output regardless of verbose mode
-		checkArgs := []string{"run", "--model", "opencode/big-pickle"}
-		if verbose {
-			checkArgs = append(checkArgs, "--print-logs")
-		}
-		checkArgs = append(checkArgs, config.PromptCommand)
-
-		cmdCheck := exec.Command("opencode", checkArgs...)
-		cmdCheck.Env = os.Environ()
-		cmdCheck.Env = append(cmdCheck.Env, "OPENAI_BASE_URL=http://100.83.162.29:1234")
-
-		checkOutput, checkErr := cmdCheck.CombinedOutput()
-		if checkErr != nil {
-			fmt.Fprintf(os.Stderr, "Error checking output on iteration %d: %v\n", i, checkErr)
-			continue
-		}
-
-		result := string(checkOutput)
-
-		// Check for completion signal
-		if strings.Contains(result, "<promise>COMPLETE</promise>") || strings.Contains(result, "✅ Complete ✅") {
+		if strings.Contains(string(output), "✅ Complete ✅") {
 			fmt.Println("✅ All tasks completed!")
 			os.Exit(0)
-		}
-
-		// Check for explicit error messages in output
-		if strings.Contains(strings.ToLower(result), "error") && !strings.Contains(result, "error handling") {
-			if verbose {
-				fmt.Printf("Warning: Potential error detected in opencode output on iteration %d\n", i)
-			}
 		}
 	}
 }
@@ -443,61 +340,29 @@ func restoreProgress(logger *Logger) error {
 }
 
 func showHelp() {
-	fmt.Printf(`Ralph Wiggum - Autonomous AI Coding Loop Executor
+	fmt.Printf(`Ralph Wiggum - Simple Autonomous AI Coding Loop
 
 USAGE:
     ralph [OPTIONS] [ITERATIONS]
 
-ARGUMENTS:
-    ITERATIONS    Number of iterations to run (default: 10)
-
 OPTIONS:
     -h, --help      Show this help message
     -v              Enable verbose output
-    -debug          Enable debug output (implies -v)
-    -n N            Set number of iterations (default: 10)
-    -backup         Create backup of progress.txt before starting
-    -restore        Restore progress.txt from latest backup and exit
-    -log-level LVL  Set logging level (DEBUG, INFO, WARN, ERROR)
-    -log-file FILE  Write logs to file (default: stdout only)
-
-DESCRIPTION:
-    This program runs an autonomous AI coding loop using the opencode CLI.
-    It executes the prompt defined in prompt.md, tracks progress in progress.txt,
-    and manages tasks defined in tasks.md.
-
-    The loop continues until all tasks are complete or the specified number 
-    of iterations is reached.
-
-CONFIGURATION:
-    The program looks for a config.json file for customization. If not found,
-    default settings are used. The config file can contain:
-    
-    {
-        "prompt_command": "your custom prompt here"
-    }
-
-BACKUP/RESTORE:
-    The -backup flag creates a timestamped backup of progress.txt in the 
-    'backups/' directory before starting the loop. The -restore flag restores
-    progress.txt from the most recent backup and exits.
-
-FILES REQUIRED:
-    - tasks.md     Task definitions and priorities
-    - progress.txt Progress tracking
-    - prompt.md    AI execution prompt
-    - config.json  Optional configuration file
+    -n N            Number of iterations to run (default: 10)
 
 EXAMPLES:
-    ralph                    # Run 10 iterations
-    ralph 5                  # Run 5 iterations
-    ralph -n 20 -v           # Run 20 iterations with verbose output
-    ralph -debug             # Run with debug logging
-    ralph -log-level DEBUG   # Run with DEBUG level logging
-    ralph -log-file ralph.log # Run and log to file
-    ralph -backup            # Create backup and run 10 iterations
-    ralph -restore           # Restore from latest backup
-    ralph -h                 # Show help
+    ralph           # Run 10 iterations
+    ralph 5         # Run 5 iterations  
+    ralph -n 20 -v  # Run 20 iterations with verbose output
+    ralph -h        # Show this help
+
+REQUIRED FILES:
+    - tasks.md      Task definitions
+    - progress.txt  Progress tracking
+    - prompt.md     AI execution prompt
+
+OPTIONAL FILES:
+    - config.json   Custom prompt command
 
 `)
 }
