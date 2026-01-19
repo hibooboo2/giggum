@@ -3,11 +3,12 @@
 This folder implements a Ralph Wiggum autonomous AI coding loop. Current tasks to complete:
 
 ## High Priority Tasks
-- [ ] Add proper shebang and error handling to ralph.sh
-- [ ] Fix typo in ralph.sh line 18: "promot.md" should be "prompt.md"
-- [ ] Add usage documentation to ralph.sh with help flag
+- [x] Add proper shebang and error handling to ralph.sh
+- [x] Fix typo in ralph.sh line 18: "promot.md" should be "prompt.md"
+- [x] Add usage documentation to ralph.sh with help flag
 - [ ] Create example PRD.json file for structured task tracking
-
+- [ ] make ralph use golang.
+  
 ## Medium Priority Tasks  
 - [ ] Add feedback loop validation (check if opencode CLI is available)
 - [ ] Improve error handling in ralph.sh for missing files

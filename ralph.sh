@@ -1,6 +1,49 @@
 #!/bin/bash
 # ralph.sh
-# Usage: ./ralph.sh {citerations}
+# Autonomous AI coding loop executor
+
+# Function to display help
+show_help() {
+    cat << EOF
+Ralph Wiggum - Autonomous AI Coding Loop Executor
+
+USAGE:
+    ./ralph.sh [OPTIONS] [ITERATIONS]
+
+ARGUMENTS:
+    ITERATIONS    Number of iterations to run (default: 10)
+
+OPTIONS:
+    -h, --help    Show this help message
+    -v            Enable verbose/debug output
+
+DESCRIPTION:
+    This script runs an autonomous AI coding loop using the opencode CLI.
+    It executes the prompt defined in prompt.md, tracks progress in progress.txt,
+    and manages tasks defined in tasks.md.
+
+    The loop continues until all tasks are complete or the specified number 
+    of iterations is reached.
+
+FILES REQUIRED:
+    - tasks.md     Task definitions and priorities
+    - progress.txt Progress tracking
+    - prompt.md    AI execution prompt
+
+EXAMPLES:
+    ./ralph.sh           # Run 10 iterations
+    ./ralph.sh 5         # Run 5 iterations
+    ./ralph.sh 20 -v     # Run 20 iterations with verbose output
+    ./ralph.sh -h        # Show help
+
+EOF
+}
+
+# Check for help flag
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    show_help
+    exit 0
+fi
 
 set -e
 
@@ -19,13 +62,23 @@ for file in "${required_files[@]}"; do
     fi
 done
 
-cnt=$1
+# Parse arguments
+cnt=""
+debug=""
+
+for arg in "$@"; do
+    case $arg in
+        -v)
+            debug='--print-logs'
+            ;;
+        [0-9]*)
+            cnt=$arg
+            ;;
+    esac
+done
+
 if [ -z "$cnt" ]; then
     cnt=10
-fi
-
-if [ "$2" == "-v" ]; then
-    debug='--print-logs'
 fi
 
 # For each iteration, run Claude Code with the following prompt.

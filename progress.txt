@@ -3,3 +3,4 @@ Session started - working on summarizing what this folder does.
 ✅ COMPLETED: Created proper task list in tasks.md with prioritized tasks for the Ralph Wiggum implementation.
 ✅ COMPLETED: Fixed critical typo in ralph.sh line 18 - changed "promot.md" to "prompt.md".
 ✅ COMPLETED: Added proper shebang and comprehensive error handling to ralph.sh including opencode CLI availability check and required file validation.
+✅ COMPLETED: Added comprehensive usage documentation to ralph.sh with -h/--help flag, including usage examples, file requirements, and argument parsing improvements.
