@@ -7,4 +7,4 @@ This should be the one YOU decide has the highest priority,
 4. Make a git commit of that feature.
 ONLY WORK ON A SINGLE FEATURE.
 If, while implementing the feature, you notice that all work
-is complete, output ✅ Complete ✅.
+is complete, output ✅ Complete ✅ only do this if all tasks are complete.
