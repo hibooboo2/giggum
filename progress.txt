@@ -4,3 +4,4 @@ Session started - working on summarizing what this folder does.
 ✅ COMPLETED: Fixed critical typo in ralph.sh line 18 - changed "promot.md" to "prompt.md".
 ✅ COMPLETED: Added proper shebang and comprehensive error handling to ralph.sh including opencode CLI availability check and required file validation.
 ✅ COMPLETED: Added comprehensive usage documentation to ralph.sh with -h/--help flag, including usage examples, file requirements, and argument parsing improvements.
+✅ COMPLETED: Created example PRD.json file for structured task tracking. Added 5 example items with categories (functional, technical, documentation), steps, and passes fields following the format from wiggum.md. Items include Go conversion, README creation, feedback loop validation, and error handling improvements.
