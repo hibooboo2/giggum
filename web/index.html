@@ -24,6 +24,7 @@
             <nav class="main-nav">
                 <button onclick="showAgents()" class="nav-btn" id="agents-nav-btn">Agents</button>
                 <button onclick="showProjects()" class="nav-btn" id="projects-nav-btn">Projects</button>
+                <button onclick="showSessions()" class="nav-btn" id="sessions-nav-btn">Sessions</button>
             </nav>
         </header>
 
@@ -102,6 +103,24 @@
                             <!-- Sessions will be loaded here -->
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <section class="sessions" id="sessions" style="display: none;">
+                <div class="sessions-header">
+                    <h2>All Sessions</h2>
+                    <div class="header-actions">
+                        <div class="session-count" id="session-count">0 sessions</div>
+                        <div class="connection-status" id="connection-status-sessions" title="WebSocket connection status">
+                            <span class="status-indicator" id="status-indicator-sessions">●</span>
+                        </div>
+                        <button onclick="toggleNotifications()" class="notification-btn">
+                            🔔 <span id="notification-badge-sessions">0</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="sessions-list" id="sessions-list">
+                    <!-- Sessions will be dynamically loaded here -->
                 </div>
             </section>
 

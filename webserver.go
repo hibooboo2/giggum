@@ -87,6 +87,7 @@ func (ws *WebServer) Start() error {
 		api.GET("/notifications", ws.getNotifications)
 		api.GET("/projects", ws.listProjects)
 		api.GET("/projects/:path", ws.getProjectDetails)
+		api.GET("/sessions", ws.listAllSessions)
 	}
 
 	// Health check endpoint
@@ -268,6 +269,33 @@ func (ws *WebServer) getProjectDetails(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"project": projectDetails,
+	})
+}
+
+// listAllSessions returns all sessions from all projects
+func (ws *WebServer) listAllSessions(c *gin.Context) {
+	// Get the global database manager
+	dbPath := GetGlobalDBPath()
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to connect to database: %v", err),
+		})
+		return
+	}
+	defer dbManager.Close()
+
+	sessions, err := dbManager.GetAllSessions()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to get sessions: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"sessions": sessions,
+		"count":    len(sessions),
 	})
 }
 

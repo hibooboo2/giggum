@@ -458,6 +458,52 @@ body {
     color: #1e293b;
 }
 
+/* Sessions Styles */
+.sessions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.sessions-header h2 {
+    font-size: 1.875rem;
+    color: #1e293b;
+}
+
+.session-count {
+    background: #f59e0b;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 2rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.sessions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.global-session {
+    border-left: 4px solid #f59e0b;
+}
+
+.session-project {
+    font-size: 0.875rem;
+    color: #64748b;
+    background: #f8fafc;
+    padding: 0.5rem;
+    border-radius: 0.25rem;
+    border: 1px solid #e2e8f0;
+    margin-bottom: 0.5rem;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    word-break: break-all;
+}
+
 /* Project Detail */
 .project-detail {
     max-width: 900px;

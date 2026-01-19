@@ -1,6 +1,7 @@
 // PWA App JavaScript
 let agents = [];
 let projects = [];
+let sessions = [];
 let notifications = [];
 let isLoading = false;
 let notificationInterval = null;
@@ -15,11 +16,14 @@ const agentsSection = document.getElementById('agents');
 const agentDetail = document.getElementById('agent-detail');
 const projectsSection = document.getElementById('projects');
 const projectDetail = document.getElementById('project-detail');
+const sessionsSection = document.getElementById('sessions');
 const notificationsPanel = document.getElementById('notifications-panel');
 const agentGrid = document.getElementById('agent-grid');
 const projectGrid = document.getElementById('project-grid');
+const sessionsList = document.getElementById('sessions-list');
 const agentCount = document.getElementById('agent-count');
 const projectCount = document.getElementById('project-count');
+const sessionCount = document.getElementById('session-count');
 const errorMessage = document.getElementById('error-message');
 const notificationBadge = document.getElementById('notification-badge');
 const notificationsList = document.getElementById('notifications-list');
@@ -150,6 +154,86 @@ async function showAgentDetail(agent) {
 // Back to agents list
 function backToList() {
     showAgents(agents);
+}
+
+// Load sessions from API
+async function loadSessions() {
+    if (isLoading) return;
+    
+    isLoading = true;
+    showLoading();
+    
+    try {
+        const response = await fetch('/api/sessions');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        sessions = data.sessions || [];
+        
+        if (sessions.length === 0) {
+            showError('No sessions found');
+            return;
+        }
+        
+        displaySessions(sessions);
+        
+    } catch (err) {
+        console.error('Failed to load sessions:', err);
+        showError(`Failed to load sessions: ${err.message}`);
+    } finally {
+        isLoading = false;
+    }
+}
+
+// Display sessions list
+function displaySessions(sessionList) {
+    hideAllSections();
+    sessionCount.textContent = `${sessionList.length} sessions`;
+    
+    // Clear existing list
+    sessionsList.innerHTML = '';
+    
+    // Create session items
+    sessionList.forEach(session => {
+        const item = createGlobalSessionItem(session);
+        sessionsList.appendChild(item);
+    });
+    
+    sessionsSection.style.display = 'block';
+    updateActiveNav('sessions');
+}
+
+// Create session item element for global sessions view
+function createGlobalSessionItem(session) {
+    const item = document.createElement('div');
+    item.className = 'session-item global-session';
+    
+    const header = document.createElement('div');
+    header.className = 'session-header';
+    header.innerHTML = `
+        <span class="session-agent">${session.agent_type}</span>
+        <span class="session-status ${session.status}">${session.status}</span>
+    `;
+    
+    const projectPath = document.createElement('div');
+    projectPath.className = 'session-project';
+    projectPath.textContent = session.project_path;
+    
+    const times = document.createElement('div');
+    times.className = 'session-times';
+    times.innerHTML = `
+        <div>Started: ${formatDate(session.start_time)}</div>
+        ${session.end_time ? `<div>Ended: ${formatDate(session.end_time)}</div>` : '<div>Active</div>'}
+    `;
+    
+    item.appendChild(header);
+    item.appendChild(projectPath);
+    item.appendChild(times);
+    
+    return item;
 }
 
 // Load notifications from API
@@ -573,11 +657,15 @@ function formatDate(dateString) {
 
 // Navigation functions
 function showAgents() {
-    showAgents(agents);
+    showAgentsList(agents);
 }
 
 function showProjects() {
     showProjectsView();
+}
+
+function showSessions() {
+    loadSessions();
 }
 
 function backToProjects() {
@@ -588,16 +676,20 @@ function backToProjects() {
 function updateActiveNav(activeSection) {
     const agentsBtn = document.getElementById('agents-nav-btn');
     const projectsBtn = document.getElementById('projects-nav-btn');
+    const sessionsBtn = document.getElementById('sessions-nav-btn');
     
     // Remove active class from all buttons
     agentsBtn.classList.remove('active');
     projectsBtn.classList.remove('active');
+    sessionsBtn.classList.remove('active');
     
     // Add active class to current button
     if (activeSection === 'agents') {
         agentsBtn.classList.add('active');
     } else if (activeSection === 'projects') {
         projectsBtn.classList.add('active');
+    } else if (activeSection === 'sessions') {
+        sessionsBtn.classList.add('active');
     }
 }
 
@@ -609,6 +701,7 @@ function hideAllSections() {
     agentDetail.style.display = 'none';
     projectsSection.style.display = 'none';
     projectDetail.style.display = 'none';
+    sessionsSection.style.display = 'none';
     // Don't hide notifications panel here as it should be toggleable
 }
 

@@ -702,3 +702,45 @@ func (m *DBManager) GetProjectDetails(projectPath string) (*ProjectDetails, erro
 
 	return &details, nil
 }
+
+// GetAllSessions retrieves all sessions from all projects
+func (m *DBManager) GetAllSessions() ([]AgentSession, error) {
+	query := `
+	SELECT id, agent_type, project_path, start_time, end_time, status
+	FROM agent_sessions
+	ORDER BY start_time DESC`
+
+	rows, err := m.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query all sessions: %v", err)
+	}
+	defer rows.Close()
+
+	var sessions []AgentSession
+	for rows.Next() {
+		var s AgentSession
+		var startTimeStr, endTimeStr sql.NullString
+
+		err := rows.Scan(&s.ID, &s.AgentType, &s.ProjectPath, &startTimeStr, &endTimeStr, &s.Status)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan session row: %v", err)
+		}
+
+		// Parse timestamps
+		if startTimeStr.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", startTimeStr.String); err == nil {
+				s.StartTime = t
+			}
+		}
+
+		if endTimeStr.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", endTimeStr.String); err == nil {
+				s.EndTime = &t
+			}
+		}
+
+		sessions = append(sessions, s)
+	}
+
+	return sessions, rows.Err()
+}
