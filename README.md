@@ -12,8 +12,8 @@ Ralph Wiggum is an approach to autonomous AI coding that lets an agent work unsu
 - `tasks.md` - Task definitions and priorities
 - `progress.txt` - Progress tracking between iterations
 - `prompt.md` - AI execution prompt
-- `PRD.json` - Example structured task tracking
-- `wiggum.md` - Comprehensive documentation about Ralph Wiggum methodology
+- `config.json` - Optional configuration file for customizing behavior
+- `backups/` - Directory for progress.txt backups (created automatically)
 
 ## Setup
 
@@ -45,8 +45,12 @@ Ralph Wiggum is an approach to autonomous AI coding that lets an agent work unsu
 
 Make sure these files exist in the directory:
 - `tasks.md` - Contains your task list and priorities
-- `progress.txt` - Tracks progress (will be created automatically)
+- `progress.txt` - Tracks progress (must exist, not created automatically)
 - `prompt.md` - Contains the AI execution instructions
+
+### Optional Files
+
+- `config.json` - Custom configuration for prompt command, webhooks, and behavior
 
 Example `tasks.md`:
 ```markdown
@@ -83,8 +87,11 @@ Run the autonomous loop (default 10 iterations):
 ### Options
 
 - `-h, --help` - Show help message
-- `-v` - Enable verbose/debug output
+- `-v` - Enable verbose output (shows colorized opencode output)
+- `-debug` - Enable debug output (implies -v, adds --print-logs to opencode)
 - `-n N` - Set number of iterations (default: 10)
+- `-backup` - Backup progress.txt before running
+- `-restore` - Restore progress.txt from latest backup and exit
 
 ### Examples
 
@@ -95,6 +102,15 @@ Run the autonomous loop (default 10 iterations):
 # Run 20 iterations with verbose output
 ./ralph -n 20 -v
 
+# Run with debug output
+./ralph -debug
+
+# Backup progress and run
+./ralph -backup -n 15
+
+# Restore from backup
+./ralph -restore
+
 # Show help
 ./ralph -h
 ```
@@ -103,11 +119,14 @@ Run the autonomous loop (default 10 iterations):
 
 Each iteration:
 1. Reads the current tasks and progress
-2. Runs OpenCode CLI with the prompt from `prompt.md`
+2. Runs OpenCode CLI with the configured prompt command
 3. The AI chooses the highest priority task to work on
 4. Implements the feature and runs feedback loops
 5. Commits the changes and updates progress
 6. Continues until all tasks are complete or iteration limit is reached
+7. Optionally sends webhook notifications upon completion
+
+The program uses the OpenAI base URL `http://100.83.162.29:1234` by default and the `opencode/big-pickle` model.
 
 ## Feedback Loops
 
@@ -145,22 +164,43 @@ This isolates Ralph from your system files while still allowing it to work on th
 
 ## Configuration
 
-### Structured Task Tracking
+### Config File
 
-Use the `PRD.json` file for structured task tracking:
+Use the `config.json` file to customize Ralph's behavior:
 
 ```json
 {
-  "category": "functional",
-  "description": "New chat button creates a fresh conversation",
-  "steps": [
-    "Click the 'New Chat' button",
-    "Verify a new conversation is created",
-    "Check that chat area shows welcome state"
-  ],
-  "passes": false
+  "prompt_command": "@tasks.md @progress.txt @prompt.md Follow the instrunctions in prompt.md",
+  "webhook_url": "https://hooks.slack.com/services/YOUR/WEBHOOK/URL",
+  "wait_for_reply": false,
+  "reply_prompt": "Enter your response (or press Enter to continue): ",
+  "add_to_tasks": true
 }
 ```
+
+**Configuration Options:**
+- `prompt_command`: Custom command to pass to OpenCode CLI (default: `@tasks.md @progress.txt @prompt.md Follow the instrunctions in prompt.md`)
+- `webhook_url`: URL to send completion notifications to
+- `wait_for_reply`: Whether to wait for and process webhook responses
+- `reply_prompt`: Prompt text for webhook responses
+- `add_to_tasks`: Whether to add webhook responses to tasks.md
+
+### Progress Backup and Restore
+
+Ralph includes automatic backup and restore functionality:
+
+- **Backup**: Create timestamped backups of progress.txt before running
+- **Restore**: Restore from the latest backup file
+
+```bash
+# Backup before running
+./ralph -backup -n 10
+
+# Restore from latest backup
+./ralph -restore
+```
+
+Backup files are stored in the `backups/` directory with format `progress_YYYYMMDD_HHMMSS.txt`.
 
 ### Alternative Loop Types
 
