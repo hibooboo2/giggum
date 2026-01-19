@@ -1,4 +1,4 @@
-1. Decide which task to work on next from @tasks.md
+1. Decide which task to work on next from  @tasks_parsed.md
 This should be the one YOU decide has the highest priority,
 - not necessarily the first in the list.
     - Make sure new code does not duplicate old code or itself

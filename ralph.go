@@ -61,11 +61,11 @@ func runIterations(logger *Logger, config Config, iterations int, debug bool) {
 	}
 
 	for i := 1; i <= iterations; i++ {
+		var err error
 		fmt.Printf("Running iteration %d/%d with %s agent...\n", i, iterations, config.AgentType)
 
 		// Execute using agent only - no traditional execution path
-		err := runAgentWithOutputCapture(logger, config.AgentType, config.PromptCommand, debug)
-
+		// err := runAgentWithOutputCapture(logger, config.AgentType, config.PromptCommand, debug)
 		if err != nil {
 			if err.Error() == "COMPLETED" {
 				// Send webhook notification for early completion
@@ -77,7 +77,7 @@ func runIterations(logger *Logger, config Config, iterations int, debug bool) {
 
 			// Enhanced error handling for agent-only execution
 			logger.Error("Agent execution failed in iteration %d: %v", i, err)
-			logger.Error("Agent type: %s, Task: %s", config.AgentType, config.PromptCommand)
+			// logger.Error("Agent type: %s, Task: %s", config.AgentType, config.PromptCommand)
 
 			fmt.Fprintf(os.Stderr, "Error in iteration %d with %s agent: %v\n", i, config.AgentType, err)
 			fmt.Fprintf(os.Stderr, "Note: This system uses agent-only execution - no fallback mode available.\n")
@@ -175,7 +175,7 @@ func main() {
 
 	// Handle multi-agent mode
 	if args.multiAgent {
-		if err := runMultiAgentSession(logger, args.iterations, args.debug); err != nil {
+		if err := runMultiAgentSession(logger, config, args.iterations, args.debug); err != nil {
 			fmt.Fprintf(os.Stderr, "Error in multi-agent session: %v\n", err)
 			os.Exit(1)
 		}
@@ -207,10 +207,10 @@ func main() {
 	}
 
 	// Run iterations
-	runIterations(logger, *config, args.iterations, args.debug)
+	runIterations(logger, config, args.iterations, args.debug)
 
 	// Send webhook notification after completing all iterations
-	if err := sendWebhookNotification(logger, *config, args.iterations, true); err != nil {
+	if err := sendWebhookNotification(logger, config, args.iterations, true); err != nil {
 		logger.Warn("Failed to send webhook notification: %v", err)
 	}
 }

@@ -152,14 +152,6 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("agent configuration validation failed: %w", err)
 	}
 
-	// Validate prompt command
-	if config.PromptCommand == "" {
-		return &GiggumError{
-			Code:    ErrCodeConfiguration,
-			Message: "Prompt command cannot be empty",
-		}
-	}
-
 	return nil
 }
 

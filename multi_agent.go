@@ -98,18 +98,25 @@ func showAgentProgress() {
 }
 
 // runMultiAgentSession coordinates multiple agents to work on tasks
-func runMultiAgentSession(logger *Logger, iterations int, debug bool) error {
-	// Read tasks.md to get the list of tasks
-	tasksContent, err := os.ReadFile("tasks.md")
+func runMultiAgentSession(logger *Logger, config Config, iterations int, debug bool) error {
+	err := runAgent(logger, Researcher, "read @tasks.md add metadata for each task expand a little sort them by priority and then write it to @tasks_parsed.md each line should contain one task that has sightly more info than the original task", debug)
 	if err != nil {
-		return fmt.Errorf("failed to read tasks.md: %v", err)
+		return fmt.Errorf("failed to run task parsing")
+	}
+
+	// Read tasks.md to get the list of tasks
+	tasksContent, err := os.ReadFile("tasks_parsed.md")
+	if err != nil {
+		return fmt.Errorf("failed to read tasks_parsed.md: %v", err)
 	}
 
 	// Parse tasks from file
 	tasks := parseTasks(string(tasksContent))
 	if len(tasks) == 0 {
-		return fmt.Errorf("no tasks found in tasks.md")
+		return fmt.Errorf("no tasks found in tasks_parsed.md")
 	}
+
+	return nil
 
 	// Define agent priorities for different task types
 	agentPriority := []AgentType{
@@ -138,7 +145,7 @@ func runMultiAgentSession(logger *Logger, iterations int, debug bool) error {
 			i+1, iterations, agentType, task)
 
 		// Run the agent
-		err := runAgent(logger, agentType, task, debug)
+		err := runAgent(logger, agentType, "Please follow the instructions in @prompt.md", debug)
 		if err != nil {
 			logger.Warn("Agent %s failed on task '%s': %v", agentType, task, err)
 			// Try with a different agent as fallback
@@ -149,6 +156,10 @@ func runMultiAgentSession(logger *Logger, iterations int, debug bool) error {
 					logger.Error("Debugger also failed on task '%s': %v", task, err)
 				}
 			}
+		}
+
+		if webhookErr := sendWebhookNotification(logger, config, i, true); webhookErr != nil {
+			logger.Warn("Failed to send webhook notification: %v", webhookErr)
 		}
 
 		// Add separator between tasks

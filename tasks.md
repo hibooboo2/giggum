@@ -1,5 +1,5 @@
-- create giggum task add which will add task using interactive questions to make high quality tasks with metadata to store in the giggum project database(this is the db in the root of the current git repo)
 - Use sqlite to store tasks
+- create giggum task add which will add task using interactive questions to make high quality tasks with metadata to store in the giggum project database(this is the db in the root of the current git repo)
 - select from sqlite tasks to do next based on metadata search using task metadata
 - giggum task list to list all created tasks
 - when giggum finishes a task it should update that it is done in the db with the commit that implemented the fix feature or task. 
