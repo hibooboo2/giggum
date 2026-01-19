@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -40,23 +39,6 @@ func parseFlags() CLIArgs {
 	flag.StringVar(&args.taskCommand, "task", "", "Task command (list, create, add, remove, stats, import)")
 	flag.Parse()
 	return args
-}
-
-func validateEnvironment() error {
-	// Validate opencode CLI exists
-	if _, err := exec.LookPath("opencode"); err != nil {
-		return fmt.Errorf("opencode CLI not found. Please install it first")
-	}
-
-	// Validate required files exist
-	requiredFiles := []string{"tasks.md", "progress.txt", "prompt.md"}
-	for _, file := range requiredFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			return fmt.Errorf("required file '%s' not found", file)
-		}
-	}
-
-	return nil
 }
 
 // Status display mappings
@@ -617,12 +599,6 @@ func main() {
 	// Debug implies verbose
 	if args.debug {
 		args.verbose = true
-	}
-
-	// Validate environment
-	if err := validateEnvironment(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
 	}
 
 	// Parse iteration count from argument if provided

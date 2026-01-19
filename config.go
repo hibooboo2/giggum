@@ -75,9 +75,7 @@ func validateFeedbackLoops(logger *Logger) error {
 
 	// Validate required files exist and provide helpful messages
 	requiredFiles := map[string]string{
-		"tasks.md":     "Task definitions and priorities",
 		"progress.txt": "Progress tracking file",
-		"prompt.md":    "AI execution prompt",
 	}
 
 	for file, description := range requiredFiles {
