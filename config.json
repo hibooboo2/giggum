@@ -1,7 +1,0 @@
-{
-    "prompt_command": "@tasks.md @progress.txt execute the prompt in @prompt.md",
-    "webhook_url": "http://localhost:3000/api/notify",
-    "wait_for_reply": true,
-    "reply_prompt": "Enter additional tasks or feedback (or press Enter to continue): ",
-    "add_to_tasks": true
-}
