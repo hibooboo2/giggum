@@ -17,6 +17,7 @@ const agentDetail = document.getElementById('agent-detail');
 const projectsSection = document.getElementById('projects');
 const projectDetail = document.getElementById('project-detail');
 const sessionsSection = document.getElementById('sessions');
+const sessionDetail = document.getElementById('session-detail');
 const notificationsPanel = document.getElementById('notifications-panel');
 const agentGrid = document.getElementById('agent-grid');
 const projectGrid = document.getElementById('project-grid');
@@ -209,7 +210,8 @@ function displaySessions(sessionList) {
 // Create session item element for global sessions view
 function createGlobalSessionItem(session) {
     const item = document.createElement('div');
-    item.className = 'session-item global-session';
+    item.className = 'session-item global-session clickable';
+    item.onclick = () => showSessionDetail(session.id);
     
     const header = document.createElement('div');
     header.className = 'session-header';
@@ -602,6 +604,9 @@ async function showProjectDetail(project) {
             </div>
         `;
         
+        // Load and display project tasks
+        await loadProjectTasks(project.project_path);
+        
         // Display recent sessions
         const sessionsContainer = document.getElementById('project-sessions-list');
         if (projectInfo.recent_sessions && projectInfo.recent_sessions.length > 0) {
@@ -626,7 +631,8 @@ async function showProjectDetail(project) {
 // Create session item element
 function createSessionItem(session) {
     const item = document.createElement('div');
-    item.className = 'session-item';
+    item.className = 'session-item clickable';
+    item.onclick = () => showSessionDetail(session.id);
     
     const header = document.createElement('div');
     header.className = 'session-header';
@@ -646,6 +652,74 @@ function createSessionItem(session) {
     item.appendChild(times);
     
     return item;
+}
+
+// Show session detail
+async function showSessionDetail(sessionId) {
+    try {
+        const response = await fetch(`/api/sessions/${sessionId}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        const session = data.session;
+        
+        // Update detail view
+        document.getElementById('session-detail-agent').textContent = session.agent_type;
+        document.getElementById('session-detail-status').textContent = session.status;
+        document.getElementById('session-detail-status').className = `session-status ${session.status}`;
+        document.getElementById('session-detail-project').textContent = session.project_path;
+        document.getElementById('session-detail-start-time').textContent = formatDate(session.start_time);
+        document.getElementById('session-detail-end-time').textContent = session.end_time ? formatDate(session.end_time) : 'Still active';
+        
+        // Display conversation
+        const conversationContainer = document.getElementById('session-conversation');
+        conversationContainer.innerHTML = '';
+        
+        if (session.inputs && session.inputs.length > 0 && session.outputs && session.outputs.length > 0) {
+            // Interleave inputs and outputs chronologically
+            const maxItems = Math.max(session.inputs.length, session.outputs.length);
+            for (let i = 0; i < maxItems; i++) {
+                if (i < session.inputs.length) {
+                    const inputDiv = document.createElement('div');
+                    inputDiv.className = 'conversation-message input';
+                    inputDiv.innerHTML = `
+                        <div class="message-label">Input:</div>
+                        <div class="message-content">${escapeHtml(session.inputs[i])}</div>
+                    `;
+                    conversationContainer.appendChild(inputDiv);
+                }
+                
+                if (i < session.outputs.length) {
+                    const outputDiv = document.createElement('div');
+                    outputDiv.className = 'conversation-message output';
+                    outputDiv.innerHTML = `
+                        <div class="message-label">Output:</div>
+                        <div class="message-content">${escapeHtml(session.outputs[i])}</div>
+                    `;
+                    conversationContainer.appendChild(outputDiv);
+                }
+            }
+        } else {
+            conversationContainer.innerHTML = '<p style="text-align: center; color: #64748b; padding: 2rem;">No conversation data available</p>';
+        }
+        
+        hideAllSections();
+        sessionDetail.style.display = 'block';
+        
+    } catch (err) {
+        console.error('Failed to load session details:', err);
+        showError(`Failed to load session details: ${err.message}`);
+    }
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // Format date helper function
@@ -670,6 +744,10 @@ function showSessions() {
 
 function backToProjects() {
     showProjectsView();
+}
+
+function backToSessions() {
+    loadSessions();
 }
 
 // Update active navigation state
@@ -702,6 +780,7 @@ function hideAllSections() {
     projectsSection.style.display = 'none';
     projectDetail.style.display = 'none';
     sessionsSection.style.display = 'none';
+    sessionDetail.style.display = 'none';
     // Don't hide notifications panel here as it should be toggleable
 }
 
@@ -755,6 +834,125 @@ document.addEventListener('touchend', () => {
         loadAgents();
     }
 });
+
+// Load project tasks
+async function loadProjectTasks(projectPath) {
+    try {
+        const encodedPath = encodeURIComponent(projectPath);
+        const response = await fetch(`/api/projects/${encodedPath}/tasks`);
+        
+        if (!response.ok) {
+            // If tasks file doesn't exist, show a message
+            if (response.status === 404) {
+                const tasksContainer = document.getElementById('project-tasks-content');
+                tasksContainer.innerHTML = `
+                    <div class="no-tasks">
+                        <p>No tasks.md file found in this project.</p>
+                        <p>Click "Add Task" to create one and add your first task.</p>
+                    </div>
+                `;
+                return;
+            }
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Display tasks content
+        const tasksContainer = document.getElementById('project-tasks-content');
+        if (data.tasks && data.tasks.trim() !== '') {
+            tasksContainer.innerHTML = `
+                <div class="tasks-content">
+                    <pre class="tasks-text">${escapeHtml(data.tasks)}</pre>
+                </div>
+            `;
+        } else {
+            tasksContainer.innerHTML = `
+                <div class="no-tasks">
+                    <p>No tasks found in this project.</p>
+                    <p>Click "Add Task" to add your first task.</p>
+                </div>
+            `;
+        }
+        
+    } catch (err) {
+        console.error('Failed to load project tasks:', err);
+        const tasksContainer = document.getElementById('project-tasks-content');
+        tasksContainer.innerHTML = `
+            <div class="error-message">
+                <p>Failed to load tasks: ${err.message}</p>
+            </div>
+        `;
+    }
+}
+
+// Show add task form
+function showAddTaskForm() {
+    const modal = document.getElementById('add-task-modal');
+    modal.style.display = 'block';
+    document.getElementById('task-input').focus();
+}
+
+// Hide add task form
+function hideAddTaskForm() {
+    const modal = document.getElementById('add-task-modal');
+    modal.style.display = 'none';
+    document.getElementById('add-task-form').reset();
+}
+
+// Add task to project
+async function addTask(event) {
+    event.preventDefault();
+    
+    const formData = new FormData(event.target);
+    const task = formData.get('task').trim();
+    const priority = formData.get('priority');
+    
+    if (!task) {
+        alert('Task description is required');
+        return;
+    }
+    
+    // Get current project path from the detail view
+    const projectPath = document.getElementById('project-detail-path').textContent;
+    
+    try {
+        const encodedPath = encodeURIComponent(projectPath);
+        const response = await fetch(`/api/projects/${encodedPath}/tasks`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                task: task,
+                priority: priority
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        // Show success message
+        showToastNotification({
+            type: 'success',
+            title: 'Task Added',
+            message: `Successfully added task to project: ${projectPath}`
+        });
+        
+        // Hide the form
+        hideAddTaskForm();
+        
+        // Reload tasks to show the new task
+        await loadProjectTasks(projectPath);
+        
+    } catch (err) {
+        console.error('Failed to add task:', err);
+        alert(`Failed to add task: ${err.message}`);
+    }
+}
 
 // Handle visibility changes (app switching)
 document.addEventListener('visibilitychange', () => {

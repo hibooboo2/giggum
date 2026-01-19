@@ -97,12 +97,48 @@
                     <div class="project-stats" id="project-stats">
                         <!-- Project statistics will be loaded here -->
                     </div>
+                    <div class="project-tasks">
+                        <div class="section-header">
+                            <h3>Project Tasks</h3>
+                            <button onclick="showAddTaskForm()" class="add-task-btn">+ Add Task</button>
+                        </div>
+                        <div id="project-tasks-content">
+                            <!-- Tasks content will be loaded here -->
+                        </div>
+                    </div>
                     <div class="project-sessions">
                         <h3>Recent Sessions</h3>
                         <div id="project-sessions-list">
                             <!-- Sessions will be loaded here -->
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <section class="add-task-modal" id="add-task-modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Add New Task</h3>
+                        <button onclick="hideAddTaskForm()" class="close-btn">✕</button>
+                    </div>
+                    <form id="add-task-form" onsubmit="addTask(event)">
+                        <div class="form-group">
+                            <label for="task-input">Task Description:</label>
+                            <textarea id="task-input" name="task" required placeholder="Enter task description..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="priority-input">Priority (optional):</label>
+                            <select id="priority-input" name="priority">
+                                <option value="">High Priority (default)</option>
+                                <option value="low">Low Priority</option>
+                                <option value="nice-to-have">Nice to have</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" onclick="hideAddTaskForm()" class="cancel-btn">Cancel</button>
+                            <button type="submit" class="submit-btn">Add Task</button>
+                        </div>
+                    </form>
                 </div>
             </section>
 
@@ -121,6 +157,36 @@
                 </div>
                 <div class="sessions-list" id="sessions-list">
                     <!-- Sessions will be dynamically loaded here -->
+                </div>
+            </section>
+
+            <section class="session-detail" id="session-detail" style="display: none;">
+                <button onclick="backToSessions()" class="back-btn">← Back to Sessions</button>
+                <div class="session-card-detail">
+                    <div class="session-header-info">
+                        <h2 id="session-detail-title">Session Details</h2>
+                        <div class="session-meta">
+                            <span id="session-detail-agent" class="session-agent"></span>
+                            <span id="session-detail-status" class="session-status"></span>
+                            <span id="session-detail-project" class="session-project"></span>
+                        </div>
+                    </div>
+                    <div class="session-timing">
+                        <div class="timing-item">
+                            <label>Started:</label>
+                            <span id="session-detail-start-time"></span>
+                        </div>
+                        <div class="timing-item">
+                            <label>Ended:</label>
+                            <span id="session-detail-end-time"></span>
+                        </div>
+                    </div>
+                    <div class="session-conversation">
+                        <h3>Conversation</h3>
+                        <div id="session-conversation" class="conversation-container">
+                            <!-- Conversation will be loaded here -->
+                        </div>
+                    </div>
                 </div>
             </section>
 

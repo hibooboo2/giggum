@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -703,6 +704,51 @@ func (m *DBManager) GetProjectDetails(projectPath string) (*ProjectDetails, erro
 	return &details, nil
 }
 
+// GetSessionByID retrieves a specific session by ID with full details
+func (m *DBManager) GetSessionByID(sessionID int64) (*AgentSession, error) {
+	query := `
+	SELECT id, agent_type, project_path, start_time, end_time, status
+	FROM agent_sessions
+	WHERE id = ?`
+
+	row := m.db.QueryRow(query, sessionID)
+
+	var s AgentSession
+	var startTimeStr, endTimeStr sql.NullString
+
+	err := row.Scan(&s.ID, &s.AgentType, &s.ProjectPath, &startTimeStr, &endTimeStr, &s.Status)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("session not found: %d", sessionID)
+		}
+		return nil, fmt.Errorf("failed to query session: %v", err)
+	}
+
+	// Parse timestamps
+	if startTimeStr.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", startTimeStr.String); err == nil {
+			s.StartTime = t
+		}
+	}
+
+	if endTimeStr.Valid {
+		if t, err := time.Parse("2006-01-02 15:04:05", endTimeStr.String); err == nil {
+			s.EndTime = &t
+		}
+	}
+
+	// Get inputs and outputs for this session
+	inputs, outputs, err := m.getSessionInputsOutputs(s.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session inputs/outputs: %v", err)
+	}
+
+	s.Inputs = inputs
+	s.Outputs = outputs
+
+	return &s, nil
+}
+
 // GetAllSessions retrieves all sessions from all projects
 func (m *DBManager) GetAllSessions() ([]AgentSession, error) {
 	query := `
@@ -743,4 +789,93 @@ func (m *DBManager) GetAllSessions() ([]AgentSession, error) {
 	}
 
 	return sessions, rows.Err()
+}
+
+// ReadTasksFile reads the tasks.md file from a project directory
+func (m *DBManager) ReadTasksFile(projectPath string) (string, error) {
+	tasksFilePath := filepath.Join(projectPath, "tasks.md")
+
+	// Check if file exists
+	if _, err := os.Stat(tasksFilePath); os.IsNotExist(err) {
+		return "", fmt.Errorf("tasks.md file not found in project: %s", projectPath)
+	}
+
+	content, err := os.ReadFile(tasksFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read tasks.md file: %v", err)
+	}
+
+	return string(content), nil
+}
+
+// WriteTasksFile writes content to the tasks.md file in a project directory
+func (m *DBManager) WriteTasksFile(projectPath string, content string) error {
+	tasksFilePath := filepath.Join(projectPath, "tasks.md")
+
+	// Ensure project directory exists
+	if err := os.MkdirAll(projectPath, 0755); err != nil {
+		return fmt.Errorf("failed to create project directory: %v", err)
+	}
+
+	// Write to tasks.md file
+	err := os.WriteFile(tasksFilePath, []byte(content), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write to tasks.md file: %v", err)
+	}
+
+	return nil
+}
+
+// AddTaskToProject adds a new task to the tasks.md file in a project directory
+func (m *DBManager) AddTaskToProject(projectPath string, task string, priority string) error {
+	// Read existing content
+	content, err := m.ReadTasksFile(projectPath)
+	if err != nil {
+		// If file doesn't exist, create a new one with basic structure
+		if strings.Contains(err.Error(), "tasks.md file not found") {
+			content = "# Tasks\n\n## HIGH PRIORITY\n\n## LOW PRIORITY\n\n## Nice to have do last\n"
+		} else {
+			return err
+		}
+	}
+
+	// Format the new task
+	newTaskLine := fmt.Sprintf("- %s", task)
+	if priority != "" {
+		newTaskLine = fmt.Sprintf("- %s (%s)", task, priority)
+	}
+
+	// Find the appropriate section to add the task
+	lines := strings.Split(content, "\n")
+	var updatedLines []string
+	var added bool
+
+	// Try to add to HIGH PRIORITY section first
+	for i, line := range lines {
+		updatedLines = append(updatedLines, line)
+
+		// Look for priority sections
+		if strings.Contains(line, "## HIGH PRIORITY") && !added {
+			// Add the task after the section header and any empty lines
+			if i+1 < len(lines) && strings.TrimSpace(lines[i+1]) == "" {
+				updatedLines = append(updatedLines, "") // Keep the empty line
+				updatedLines = append(updatedLines, newTaskLine)
+				added = true
+			} else {
+				updatedLines = append(updatedLines, "")
+				updatedLines = append(updatedLines, newTaskLine)
+				added = true
+			}
+		}
+	}
+
+	// If no HIGH PRIORITY section was found, append to the end
+	if !added {
+		updatedLines = append(updatedLines, "")
+		updatedLines = append(updatedLines, newTaskLine)
+	}
+
+	// Write back to file
+	newContent := strings.Join(updatedLines, "\n")
+	return m.WriteTasksFile(projectPath, newContent)
 }

@@ -14,3 +14,26 @@ Implemented view all sessions functionality for giggum UI:
 - Added session item components showing agent type, status, project path, and timestamps
 - Implemented responsive CSS styling for sessions components with orange accent color
 - All tests passing, build successful
+
+Implemented get session info functionality for giggum UI:
+- Added GetSessionByID() function to database.go for retrieving detailed session information
+- Created GET /api/sessions/:id API endpoint in webserver.go to serve session details
+- Enhanced frontend with session detail view showing complete conversation history
+- Made session items clickable to view detailed information
+- Added comprehensive session detail page with metadata, timing info, and input/output conversation
+- Implemented responsive CSS styling for session detail components
+- Added HTML sanitization and proper conversation interleaving
+- All tests passing, build successful
+
+Implemented add tasks to project functionality for giggum UI:
+- Added ReadTasksFile() and WriteTasksFile() functions to database.go for handling tasks.md files
+- Created AddTaskToProject() function to add tasks to existing tasks.md files with proper formatting
+- Added GET /api/projects/:path/tasks API endpoint to read project tasks.md content
+- Added POST /api/projects/:path/tasks API endpoint to add new tasks to projects
+- Enhanced frontend project detail view with tasks section and "Add Task" button
+- Created modal form for adding tasks with task description and optional priority levels
+- Implemented real-time task loading and display with formatted markdown rendering
+- Added comprehensive CSS styling for task components, modal, and responsive design
+- Included WebSocket notifications for successful task additions
+- Added comprehensive unit tests for task management functions
+- All tests passing, build successful

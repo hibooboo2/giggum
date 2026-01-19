@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,6 +90,9 @@ func (ws *WebServer) Start() error {
 		api.GET("/projects", ws.listProjects)
 		api.GET("/projects/:path", ws.getProjectDetails)
 		api.GET("/sessions", ws.listAllSessions)
+		api.GET("/sessions/:id", ws.getSessionDetails)
+		api.GET("/projects/:path/tasks", ws.getProjectTasks)
+		api.POST("/projects/:path/tasks", ws.addTaskToProject)
 	}
 
 	// Health check endpoint
@@ -296,6 +301,136 @@ func (ws *WebServer) listAllSessions(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"sessions": sessions,
 		"count":    len(sessions),
+	})
+}
+
+// getSessionDetails returns details for a specific session
+func (ws *WebServer) getSessionDetails(c *gin.Context) {
+	sessionID := c.Param("id")
+
+	// Parse session ID as integer
+	id, err := strconv.ParseInt(sessionID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid session ID: %v", err),
+		})
+		return
+	}
+
+	// Get the global database manager
+	dbPath := GetGlobalDBPath()
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to connect to database: %v", err),
+		})
+		return
+	}
+	defer dbManager.Close()
+
+	session, err := dbManager.GetSessionByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("Session not found: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"session": session,
+	})
+}
+
+// TaskRequest represents a request to add a task to a project
+type TaskRequest struct {
+	Task     string `json:"task" binding:"required"`
+	Priority string `json:"priority,omitempty"`
+}
+
+// getProjectTasks returns the tasks.md content for a project
+func (ws *WebServer) getProjectTasks(c *gin.Context) {
+	projectPath := c.Param("path")
+
+	// Get the global database manager
+	dbPath := GetGlobalDBPath()
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to connect to database: %v", err),
+		})
+		return
+	}
+	defer dbManager.Close()
+
+	content, err := dbManager.ReadTasksFile(projectPath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("Failed to read tasks file: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"project_path": projectPath,
+		"tasks":        content,
+	})
+}
+
+// addTaskToProject adds a new task to a project's tasks.md file
+func (ws *WebServer) addTaskToProject(c *gin.Context) {
+	projectPath := c.Param("path")
+
+	var req TaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("Invalid request format: %v", err),
+		})
+		return
+	}
+
+	// Validate task is not empty
+	if strings.TrimSpace(req.Task) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Task cannot be empty",
+		})
+		return
+	}
+
+	// Get the global database manager
+	dbPath := GetGlobalDBPath()
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to connect to database: %v", err),
+		})
+		return
+	}
+	defer dbManager.Close()
+
+	// Add the task to the project
+	err = dbManager.AddTaskToProject(projectPath, req.Task, req.Priority)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to add task to project: %v", err),
+		})
+		return
+	}
+
+	// Broadcast notification about the new task
+	notification := NotificationMessage{
+		Type:    "info",
+		Title:   "Task Added",
+		Message: fmt.Sprintf("Added task to project %s: %s", projectPath, req.Task),
+		Agent:   "UI",
+		Status:  "completed",
+	}
+	ws.broadcastNotification(notification)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Task added successfully",
+		"project_path": projectPath,
+		"task":         req.Task,
+		"priority":     req.Priority,
 	})
 }
 
