@@ -42,7 +42,7 @@ func parseFlags() CLIArgs {
 	return args
 }
 
-func validateEnvironment(args CLIArgs) error {
+func validateEnvironment() error {
 	// Validate opencode CLI exists
 	if _, err := exec.LookPath("opencode"); err != nil {
 		return fmt.Errorf("opencode CLI not found. Please install it first")
@@ -78,7 +78,6 @@ func runIterations(logger *Logger, config Config, iterations int, debug bool) {
 			}
 			args = append(args, config.PromptCommand)
 			cmd := exec.Command("opencode", args...)
-			cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
 
 			// Set up output capture for tee reader functionality
 			var outputBuffer bytes.Buffer
@@ -156,7 +155,7 @@ func main() {
 	}
 
 	// Validate environment
-	if err := validateEnvironment(args); err != nil {
+	if err := validateEnvironment(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
