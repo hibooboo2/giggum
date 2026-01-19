@@ -4,12 +4,48 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
+
+// FindGitRepositoryRoot finds the root directory of the git repository
+// Returns empty string if not in a git repository or on error
+func FindGitRepositoryRoot() string {
+	// Use git rev-parse --show-toplevel to find git root
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	// Trim whitespace and return
+	gitRoot := strings.TrimSpace(string(output))
+	if gitRoot == "" {
+		return ""
+	}
+
+	// Verify it's actually a git repository by checking for .git directory
+	gitDir := filepath.Join(gitRoot, ".git")
+	if _, err := os.Stat(gitDir); err != nil {
+		return ""
+	}
+
+	return gitRoot
+}
+
+// GetTaskDBPath determines the appropriate path for the tasks database
+// If in a git repository, places it at the root, otherwise in current directory
+func GetTaskDBPath() string {
+	gitRoot := FindGitRepositoryRoot()
+	if gitRoot != "" {
+		return filepath.Join(gitRoot, "giggum_tasks.db")
+	}
+	return "./giggum_tasks.db"
+}
 
 // TaskManager manages tasks in SQLite database
 type TaskManager struct {

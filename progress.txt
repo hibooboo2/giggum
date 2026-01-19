@@ -29,3 +29,29 @@ TESTING VERIFIED:
 - Task 13: "test fix for task status bug" → researcher didn't suggest status, defaulted to "pending" ✅
 
 The fix allows tasks to start with appropriate status based on researcher analysis of the task content and context, rather than being forced to "pending" for all new tasks.
+Mon Jan 19 22:15:43 MST 2026: GIT_ROOT_TASK_DATABASE - ✅ COMPLETED - Implemented feature to save tasks database at git repository root when inside a git repo
+
+PROBLEM:
+- Tasks database was always created in current directory ('./giggum_tasks.db')
+- In multi-developer git projects, this creates scattered databases across subdirectories
+- Need centralized database location at git repository root for consistency
+
+SOLUTION IMPLEMENTED:
+1. Added FindGitRepositoryRoot() function that uses 'git rev-parse --show-toplevel' to detect git repo root
+2. Added GetTaskDBPath() function that returns git root path if in git repo, otherwise current directory
+3. Modified main() in ralph.go to use GetTaskDBPath() instead of hardcoded path
+4. Added comprehensive tests in git_utils_test.go for both git detection and path resolution
+
+FEATURES:
+- Automatically detects git repository root using git command
+- Falls back to current directory when not in a git repository
+- Works from any subdirectory within git repository
+- Validates .git directory exists before considering it a valid git repo
+
+TESTING VERIFIED:
+- Test outside git repo: returns './giggum_tasks.db' ✅
+- Test in git repo: returns '/path/to/git/root/giggum_tasks.db' ✅  
+- Test in git subdirectory: still returns git root path ✅
+- Manual testing confirmed database creation at correct location ✅
+
+The feature ensures task databases are consistently placed at git repository roots, making them accessible project-wide and avoiding scattered database files.

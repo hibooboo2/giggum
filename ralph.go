@@ -753,7 +753,7 @@ func runIterations(logger *Logger, config Config, iterations int, debug bool) {
 func main() {
 	args := parseFlags()
 
-	dbPath := "./giggum_tasks.db"
+	dbPath := GetTaskDBPath()
 	var err error
 	taskManager, err = NewTaskManager(dbPath)
 	if err != nil {
