@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // createAgentPrompt creates a prompt for a specific agent type
@@ -130,6 +131,101 @@ func runAgent(logger *Logger, agentType AgentType, task string, debug bool) erro
 
 	if err != nil {
 		return fmt.Errorf("agent execution failed: %v", err)
+	}
+
+	// Close the session
+	if dbManager != nil && sessionID > 0 {
+		dbManager.EndAgentSession(sessionID)
+	}
+
+	return nil
+}
+
+// runAgentWithOutputCapture executes a task using a specific agent type and captures output for completion detection
+func runAgentWithOutputCapture(logger *Logger, agentType AgentType, task string, debug bool) error {
+	// Get the current working directory for project path
+	projectPath, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %v", err)
+	}
+
+	// Initialize database manager
+	dbPath := GetProjectDBPath(projectPath)
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		logger.Warn("Failed to initialize database: %v", err)
+		// Continue without database if it fails
+	} else {
+		defer dbManager.Close()
+	}
+
+	// Create agent session
+	var sessionID int64
+	if dbManager != nil {
+		sessionID, err = dbManager.CreateAgentSession(agentType, projectPath)
+		if err != nil {
+			logger.Warn("Failed to create agent session: %v", err)
+		}
+	}
+
+	// Get agent prompts (system and task)
+	agentSystemPrompt, agentTaskPrompt, err := getAgentPrompts(agentType, task)
+	if err != nil {
+		return fmt.Errorf("failed to get agent prompts: %v", err)
+	}
+
+	logger.Info("Running %s agent for task: %s", agentType, task)
+
+	// Build the opencode command
+	args := []string{"run", "--model", "opencode/big-pickle"}
+	if debug {
+		args = append(args, "--print-logs")
+	}
+
+	// Combine the system prompt with the task prompt
+	fullPrompt := fmt.Sprintf("%s\n\n%s", agentSystemPrompt, agentTaskPrompt)
+	args = append(args, fullPrompt)
+
+	cmd := exec.Command("opencode", args...)
+	cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
+
+	// Set up output capture for completion detection and verbose output
+	var outputBuffer bytes.Buffer
+	var writer io.Writer
+
+	if logger.verbose {
+		// Use MultiWriter to capture output while displaying it
+		writer = io.MultiWriter(&outputBuffer, os.Stdout)
+	} else {
+		writer = &outputBuffer
+	}
+
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	// Add input to database
+	if dbManager != nil && sessionID > 0 {
+		dbManager.AddSessionInput(sessionID, fullPrompt)
+	}
+
+	// Run the command
+	err = cmd.Run()
+	output := outputBuffer.String()
+
+	// Add output to database
+	if dbManager != nil && sessionID > 0 {
+		dbManager.AddSessionOutput(sessionID, output)
+	}
+
+	if err != nil {
+		return fmt.Errorf("agent execution failed: %v", err)
+	}
+
+	// Check for completion from captured output
+	if strings.Contains(output, "✅ Complete ✅") {
+		fmt.Println("✅ All tasks completed!")
+		// Return a special error to indicate completion for proper handling in calling function
+		return fmt.Errorf("COMPLETED")
 	}
 
 	// Close the session

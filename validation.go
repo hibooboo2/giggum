@@ -69,22 +69,21 @@ func validateWebhookURL(webhookURL string) error {
 
 // validateAgentType validates agent type configuration
 func validateAgentType(config *Config) error {
-	if config.UseAgents {
-		if config.AgentType == "" {
-			return &GiggumError{
-				Code:    ErrCodeConfiguration,
-				Message: "Agent type is required when use_agents is enabled",
-			}
+	// Always require an agent type since we always use agents
+	if config.AgentType == "" {
+		return &GiggumError{
+			Code:    ErrCodeConfiguration,
+			Message: "Agent type is required",
 		}
+	}
 
-		// Check if agent type is valid
-		_, err := GetAgentPrompt(config.AgentType)
-		if err != nil {
-			return &GiggumError{
-				Code:    ErrCodeConfiguration,
-				Message: fmt.Sprintf("Invalid agent type: %s", config.AgentType),
-				Cause:   err,
-			}
+	// Check if agent type is valid
+	_, err := GetAgentPrompt(config.AgentType)
+	if err != nil {
+		return &GiggumError{
+			Code:    ErrCodeConfiguration,
+			Message: fmt.Sprintf("Invalid agent type: %s", config.AgentType),
+			Cause:   err,
 		}
 	}
 

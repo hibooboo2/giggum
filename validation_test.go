@@ -91,10 +91,10 @@ func TestValidateAgentType(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "Valid config without agents",
+			name: "Valid config with default agent",
 			config: &Config{
-				UseAgents: false,
-				AgentType: "",
+				UseAgents: true,
+				AgentType: BackendDeveloper,
 			},
 			expectErr: false,
 		},

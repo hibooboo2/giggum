@@ -183,43 +183,224 @@ func parseTasks(content string) []string {
 func selectBestAgentForTask(task string, priority []AgentType) AgentType {
 	taskLower := strings.ToLower(task)
 
-	// Simple keyword-based agent selection
-	if strings.Contains(taskLower, "test") || strings.Contains(taskLower, "bug") || strings.Contains(taskLower, "quality") {
-		return Tester
-	}
-	if strings.Contains(taskLower, "debug") || strings.Contains(taskLower, "fix") || strings.Contains(taskLower, "error") {
-		return Debugger
-	}
-	if strings.Contains(taskLower, "research") || strings.Contains(taskLower, "investigate") || strings.Contains(taskLower, "analyze") {
-		return Researcher
-	}
-	if strings.Contains(taskLower, "backend") || strings.Contains(taskLower, "api") || strings.Contains(taskLower, "database") {
-		return BackendDeveloper
-	}
-	if strings.Contains(taskLower, "frontend") || strings.Contains(taskLower, "ui") || strings.Contains(taskLower, "interface") {
-		return FrontendDeveloper
-	}
-	if strings.Contains(taskLower, "ux") || strings.Contains(taskLower, "user experience") {
-		return UX
-	}
-	if strings.Contains(taskLower, "design") || strings.Contains(taskLower, "visual") {
-		return UI
-	}
-	if strings.Contains(taskLower, "document") || strings.Contains(taskLower, "readme") || strings.Contains(taskLower, "wiki") {
-		return DocumentationWriter
-	}
-	if strings.Contains(taskLower, "market") || strings.Contains(taskLower, "promote") || strings.Contains(taskLower, "content") {
-		return Marketer
-	}
-	if strings.Contains(taskLower, "feedback") || strings.Contains(taskLower, "review") {
-		return FeedbackSeeker
-	}
-	if strings.Contains(taskLower, "simplify") || strings.Contains(taskLower, "explain") {
-		return Simplifier
+	// Enhanced keyword patterns with weighted scoring
+	type agentScore struct {
+		agent    AgentType
+		score    int
+		priority int
 	}
 
-	// Default to the first agent in priority list
-	return priority[0]
+	// Define comprehensive keyword patterns for each agent type
+	agentPatterns := map[AgentType][]string{
+		Tester: {
+			"test", "testing", "tests", "unit test", "integration test", "e2e test", "quality",
+			"defect", "defects", "validation", "verification", "qa", "quality assurance",
+			"regression", "performance test", "load test", "stress test", "coverage",
+			"tdd", "bdd", "assert", "mock", "test case", "test cases", "test suite",
+		},
+		Debugger: {
+			"debug", "debugging", "fix", "fixes", "fixing", "error", "errors", "crash",
+			"exception", "failure", "fail", "broken", "problem", "problems", "troubleshoot",
+			"troubleshooting", "resolve", "resolution", "patch", "hotfix", "stack trace",
+			"log", "logs", "investigate issue", "diagnose", "diagnosis", "root cause",
+			"bug", "bugs", "buggy", "issue", "issues",
+		},
+		Researcher: {
+			"research", "researching", "investigate", "investigation", "investigating", "study",
+			"studies", "analyze", "analysis", "exploration", "explore", "survey", "benchmark",
+			"compare", "comparison", "evaluate", "evaluation", "assess", "assessment",
+			"review literature", "market research", "feasibility", "viability", "options",
+		},
+		BackendDeveloper: {
+			"backend", "back end", "server", "server-side", "api", "apis", "rest", "graphql",
+			"database", "databases", "sql", "nosql", "orm", "migration", "schema",
+			"microservice", "microservices", "service", "services", "endpoint", "endpoints",
+			"authentication", "authorization", "security", "middleware", "cache", "caching",
+			"queue", "queues", "worker", "workers", "background job", "cron", "scheduled",
+			"implement", "create", "build", "system", "architecture",
+		},
+		FrontendDeveloper: {
+			"frontend", "front end", "client", "client-side", "component", "components",
+			"view", "views", "page", "pages", "react", "vue", "angular", "javascript",
+			"typescript", "css", "html", "web", "responsive", "mobile", "browser",
+			"dom", "spa", "single page application",
+		},
+		UX: {
+			"ux", "user experience", "user research", "usability", "user journey", "flow",
+			"flows", "wireframe", "wireframes", "prototype", "prototypes", "persona",
+			"personas", "user story", "user stories", "interaction", "interactions",
+			"navigation", "usability test", "a/b test", "user testing", "behavior",
+			"intuitive", "onboarding", "design", "designing",
+		},
+		UI: {
+			"ui", "visual", "design", "layout", "styling", "theme", "themes", "color",
+			"colors", "typography", "font", "fonts", "icon", "icons", "graphic",
+			"graphics", "brand", "branding", "style guide", "design system", "aesthetic",
+			"appearance", "look and feel", "visual hierarchy", "spacing", "grid",
+		},
+		DocumentationWriter: {
+			"document", "documentation", "docs", "readme", "wiki", "guide", "guides",
+			"manual", "manuals", "tutorial", "tutorials", "how to", "howto", "instructions",
+			"reference", "api docs", "changelog", "release notes", "help", "help file",
+			"knowledge base", "kb", "faq", "frequently asked", "writing", "technical writing",
+		},
+		Marketer: {
+			"market", "marketing", "promote", "promotion", "content", "blog", "blog post",
+			"article", "articles", "social media", "twitter", "facebook", "linkedin",
+			"campaign", "campaigns", "advertise", "advertisement", "seo", "sem", "analytics",
+			"metrics", "kpi", "growth", "engagement", "audience", "target", "strategy",
+		},
+		FeedbackSeeker: {
+			"feedback", "review", "reviews", "interview", "interviews", "survey", "surveys",
+			"questionnaire", "questionnaires", "poll", "polls", "user input", "collect feedback",
+			"gather feedback", "user opinion", "customer", "customers", "stakeholder",
+			"stakeholders", "suggestion", "suggestions", "improvement", "recommendations",
+		},
+		Simplifier: {
+			"simplify", "simplifying", "explain", "explaining", "clarify", "clarification",
+			"break down", "breakdown", "demystify", "make simple", "make understandable",
+			"accessible", "easy to understand", "plain english", "layman's terms", "analogy",
+			"analogies", "metaphor", "metaphors", "tutorial", "tutorialize", "educate",
+		},
+	}
+
+	// Calculate scores for each agent type
+	scores := make([]agentScore, 0, len(agentPatterns))
+
+	// Create priority map for fallback ordering
+	priorityMap := make(map[AgentType]int)
+	for i, agent := range priority {
+		priorityMap[agent] = i
+	}
+
+	// Score each agent based on keyword matches
+	for agentType, keywords := range agentPatterns {
+		score := 0
+		for _, keyword := range keywords {
+			if strings.Contains(taskLower, keyword) {
+				// Weight longer keywords more heavily, but give extra weight to primary agent indicators
+				weight := len(strings.Fields(keyword))
+
+				// Bonus weight for specific primary keywords that strongly indicate agent type
+				if agentType == Tester && (keyword == "test" || keyword == "testing") {
+					weight += 2
+				}
+				if agentType == Researcher && (keyword == "research" || keyword == "analyze") {
+					weight += 2
+				}
+				if agentType == UX && keyword == "ux" {
+					weight += 2
+				}
+
+				score += weight
+			}
+		}
+		if score > 0 {
+			agentPriority := priorityMap[agentType]
+			if agentPriority == 0 && len(priority) > 0 && agentType != priority[0] {
+				// If not in priority list, give it the lowest priority
+				agentPriority = len(priority)
+			}
+			scores = append(scores, agentScore{agentType, score, agentPriority})
+		}
+	}
+
+	// If no matches found, use enhanced fallback logic
+	if len(scores) == 0 {
+		return selectBestAgentByContext(task, priority)
+	}
+
+	// Sort by score (descending), then by priority (ascending)
+	for i := 0; i < len(scores)-1; i++ {
+		for j := i + 1; j < len(scores); j++ {
+			if scores[i].score < scores[j].score ||
+				(scores[i].score == scores[j].score && scores[i].priority > scores[j].priority) {
+				scores[i], scores[j] = scores[j], scores[i]
+			}
+		}
+	}
+
+	return scores[0].agent
+}
+
+// selectBestAgentByContext provides fallback logic for when no clear keyword match is found
+func selectBestAgentByContext(task string, priority []AgentType) AgentType {
+	taskLower := strings.ToLower(task)
+
+	// Context-based heuristics for ambiguous tasks
+
+	// Technical implementation tasks
+	if containsAny(taskLower, []string{"implement", "create", "build", "develop", "code", "program"}) {
+		if containsAny(taskLower, []string{"system", "architecture", "infrastructure", "scale"}) {
+			return BackendDeveloper
+		}
+		if containsAny(taskLower, []string{"user", "customer", "interface", "experience"}) {
+			return FrontendDeveloper
+		}
+		return BackendDeveloper // Default to backend for general implementation
+	}
+
+	// Planning and strategy tasks
+	if containsAny(taskLower, []string{"plan", "strategy", " roadmap", "design", "architecture"}) {
+		if containsAny(taskLower, []string{"user", "customer", "experience", "journey", "ux"}) {
+			return UX
+		}
+		if containsAny(taskLower, []string{"visual", "look", "feel", "brand"}) {
+			return UI
+		}
+		if containsAny(taskLower, []string{"system", "technical", "infrastructure"}) {
+			return BackendDeveloper
+		}
+		return Researcher
+	}
+
+	// Content and communication tasks
+	if containsAny(taskLower, []string{"write", "content", "text", "copy", "message"}) {
+		if containsAny(taskLower, []string{"technical", "api", "documentation", "instructions"}) {
+			return DocumentationWriter
+		}
+		if containsAny(taskLower, []string{"marketing", "sales", "promotion", "campaign"}) {
+			return Marketer
+		}
+		return DocumentationWriter
+	}
+
+	// Analysis and improvement tasks
+	if containsAny(taskLower, []string{"improve", "optimize", "enhance", "refactor", "update"}) {
+		if containsAny(taskLower, []string{"performance", "speed", "efficiency", "scale"}) {
+			return BackendDeveloper
+		}
+		if containsAny(taskLower, []string{"experience", "usability", "accessibility"}) {
+			return UX
+		}
+		return BackendDeveloper
+	}
+
+	// Default fallback with smart prioritization
+	if len(priority) > 0 {
+		// For completely ambiguous tasks, prefer generalist agents
+		for _, preferredAgent := range []AgentType{BackendDeveloper, Researcher, FrontendDeveloper} {
+			for _, agent := range priority {
+				if agent == preferredAgent {
+					return agent
+				}
+			}
+		}
+		return priority[0]
+	}
+
+	// Ultimate fallback
+	return BackendDeveloper
+}
+
+// containsAny checks if the text contains any of the provided substrings
+func containsAny(text string, substrings []string) bool {
+	for _, substr := range substrings {
+		if strings.Contains(text, substr) {
+			return true
+		}
+	}
+	return false
 }
 
 func showHelp() {
@@ -235,8 +416,7 @@ func showHelp() {
     -n N            Number of iterations to run (default: 10)
     -backup         Backup progress.txt before running
     -restore        Restore progress.txt from latest backup and exit
-    -agent TYPE     Use specific agent type (see -list-agents for available types)
-    -use-agents     Enable multi-agent mode
+    -agent TYPE     Use specific agent type (default: backend-developer, see -list-agents for available types)
     -multi-agent    Run coordinated multi-agent session
     -list-agents    List all available agent types and their descriptions
     -show-progress  Show agent progress for current project
@@ -244,8 +424,8 @@ func showHelp() {
     -web-port PORT  Port for web server (default: 8080)
 
  EXAMPLES:
-    ralph           # Run 10 iterations with default behavior
-    ralph 5         # Run 5 iterations  
+    ralph           # Run 10 iterations with default backend-developer agent
+    ralph 5         # Run 5 iterations with default backend-developer agent
     ralph -n 20 -v  # Run 20 iterations with verbose output
     ralph -debug    # Run with debug output (shows opencode logs)
     ralph -agent tester  # Run using the tester agent
