@@ -13,7 +13,7 @@ This folder implements a Ralph Wiggum autonomous AI coding loop. Current tasks t
 - [ ] Add feedback loop validation (check if opencode CLI is available)
 - [ ] Improve error handling in ralph.sh for missing files
 - [ ] Add backup/restore functionality for progress.txt
-- [ ] Create README.md with setup instructions
+- [x] Create README.md with setup instructions
 
 ## Low Priority Tasks
 - [ ] Add configuration file support for customizable prompts
