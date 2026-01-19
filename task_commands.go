@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -520,7 +521,8 @@ func setTaskProperties(taskManager *TaskManager) error {
 	args := flag.Args()
 
 	// If no arguments provided, show usage
-	if len(args) < 3 {
+	if len(args) < 2 {
+		log.Println(args)
 		return fmt.Errorf("usage: giggum -task set <task_id> <property> <value> OR giggum -task set <task_id> <property1>=<value1> <property2>=<value2>...")
 	}
 
