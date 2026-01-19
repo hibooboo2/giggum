@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -399,4 +400,194 @@ func (tm *TaskManager) GetTasksByStatus(status string) ([]Task, error) {
 	}
 
 	return tasks, rows.Err()
+}
+
+// UpdateTaskPriority updates the priority of a task
+func (tm *TaskManager) UpdateTaskPriority(id int64, newPriority string) error {
+	// Validate priority
+	validPriorities := map[string]bool{"high": true, "medium": true, "low": true}
+	if !validPriorities[newPriority] {
+		return fmt.Errorf("invalid priority: %s. Must be one of: high, medium, low", newPriority)
+	}
+
+	query := `
+	UPDATE tasks 
+	SET priority = ?, updated_at = CURRENT_TIMESTAMP
+	WHERE id = ?`
+
+	result, err := tm.db.Exec(query, newPriority, id)
+	if err != nil {
+		return fmt.Errorf("failed to update task priority: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("task not found: %d", id)
+	}
+
+	return nil
+}
+
+// UpdateTaskTitle updates the title of a task
+func (tm *TaskManager) UpdateTaskTitle(id int64, newTitle string) error {
+	if strings.TrimSpace(newTitle) == "" {
+		return fmt.Errorf("task title cannot be empty")
+	}
+
+	query := `
+	UPDATE tasks 
+	SET title = ?, updated_at = CURRENT_TIMESTAMP
+	WHERE id = ?`
+
+	result, err := tm.db.Exec(query, newTitle, id)
+	if err != nil {
+		return fmt.Errorf("failed to update task title: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("task not found: %d", id)
+	}
+
+	return nil
+}
+
+// UpdateTaskDescription updates the description of a task
+func (tm *TaskManager) UpdateTaskDescription(id int64, newDescription string) error {
+	query := `
+	UPDATE tasks 
+	SET description = ?, updated_at = CURRENT_TIMESTAMP
+	WHERE id = ?`
+
+	result, err := tm.db.Exec(query, newDescription, id)
+	if err != nil {
+		return fmt.Errorf("failed to update task description: %v", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %v", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("task not found: %d", id)
+	}
+
+	return nil
+}
+
+// UpdateTaskMultiple updates multiple task properties in a single transaction
+func (tm *TaskManager) UpdateTaskMultiple(id int64, updates map[string]string) error {
+	if len(updates) == 0 {
+		return fmt.Errorf("no updates provided")
+	}
+
+	// Get current task for validation and history
+	task, err := tm.GetTask(id)
+	if err != nil {
+		return fmt.Errorf("failed to get current task: %v", err)
+	}
+
+	// Start transaction
+	tx, err := tm.db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %v", err)
+	}
+	defer tx.Rollback()
+
+	// Build dynamic update query
+	var setClauses []string
+	var args []interface{}
+	oldStatus := task.Status
+	newStatus := task.Status
+	statusChanged := false
+
+	for field, value := range updates {
+		switch field {
+		case "status":
+			// Validate status
+			validStatuses := map[string]bool{"pending": true, "in_progress": true, "completed": true, "cancelled": true}
+			if !validStatuses[value] {
+				return fmt.Errorf("invalid status: %s. Must be one of: pending, in_progress, completed, cancelled", value)
+			}
+			setClauses = append(setClauses, "status = ?")
+			args = append(args, value)
+			newStatus = value
+			statusChanged = true
+		case "priority":
+			// Validate priority
+			validPriorities := map[string]bool{"high": true, "medium": true, "low": true}
+			if !validPriorities[value] {
+				return fmt.Errorf("invalid priority: %s. Must be one of: high, medium, low", value)
+			}
+			setClauses = append(setClauses, "priority = ?")
+			args = append(args, value)
+		case "title":
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("task title cannot be empty")
+			}
+			setClauses = append(setClauses, "title = ?")
+			args = append(args, value)
+		case "description":
+			setClauses = append(setClauses, "description = ?")
+			args = append(args, value)
+		case "tags":
+			setClauses = append(setClauses, "tags = ?")
+			args = append(args, value)
+		case "metadata":
+			setClauses = append(setClauses, "metadata = ?")
+			args = append(args, value)
+		default:
+			return fmt.Errorf("unknown field: %s", field)
+		}
+	}
+
+	// Add updated_at timestamp
+	setClauses = append(setClauses, "updated_at = CURRENT_TIMESTAMP")
+
+	// Add completed_at if status changed to completed
+	if statusChanged && newStatus == "completed" {
+		setClauses = append(setClauses, "completed_at = ?")
+		args = append(args, time.Now())
+	} else if statusChanged && newStatus != "completed" {
+		// Clear completed_at if status changed away from completed
+		setClauses = append(setClauses, "completed_at = NULL")
+	}
+
+	// Add task ID to args
+	args = append(args, id)
+
+	// Build and execute update query
+	updateQuery := fmt.Sprintf("UPDATE tasks SET %s WHERE id = ?", strings.Join(setClauses, ", "))
+	_, err = tx.Exec(updateQuery, args...)
+	if err != nil {
+		return fmt.Errorf("failed to update task: %v", err)
+	}
+
+	// Add to history if status changed
+	if statusChanged {
+		historyQuery := `
+		INSERT INTO task_history (task_id, action, old_status, new_status)
+		VALUES (?, 'status_change', ?, ?)`
+
+		_, err = tx.Exec(historyQuery, id, oldStatus, newStatus)
+		if err != nil {
+			return fmt.Errorf("failed to add to history: %v", err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %v", err)
+	}
+
+	return nil
 }

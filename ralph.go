@@ -68,10 +68,12 @@ func handleTaskCommand(command string) error {
 		return addTaskFromRawString(taskManager)
 	case "remove":
 		return removeTaskInteractively(taskManager)
+	case "set":
+		return setTaskProperties(taskManager)
 	case "stats":
 		return displayTaskStats(taskManager)
 	default:
-		return fmt.Errorf("unknown task command: %s. Available: list, create, add, remove, stats, import", command)
+		return fmt.Errorf("unknown task command: %s. Available: list, create, add, remove, set, stats, import", command)
 	}
 }
 
@@ -505,6 +507,128 @@ func removeTaskInteractively(taskManager *TaskManager) error {
 			return nil
 		}
 	}
+}
+
+func setTaskProperties(taskManager *TaskManager) error {
+	// Parse command line arguments using flag.Args() which gives all args after flags
+	args := flag.Args()
+
+	// If no arguments provided, show usage
+	if len(args) < 3 {
+		return fmt.Errorf("usage: giggum -task set <task_id> <property> <value> OR giggum -task set <task_id> <property1>=<value1> <property2>=<value2>...")
+	}
+
+	// Parse task ID (first argument after "set")
+	var taskID int64
+	if _, err := fmt.Sscanf(args[0], "%d", &taskID); err != nil {
+		return fmt.Errorf("invalid task ID: %s", args[0])
+	}
+
+	// Verify task exists
+	task, err := taskManager.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("task not found: %d", taskID)
+	}
+
+	// Show current task details
+	fmt.Printf("📝 Current Task [%d]:\n", task.ID)
+	priorityIcon := getPriorityIcon(task.Priority)
+	statusIcon := statusIcons[task.Status]
+	fmt.Printf("%s %s %s\n", priorityIcon, statusIcon, task.Title)
+	if task.Description != "" && task.Description != task.Title {
+		fmt.Printf("Description: %s\n", task.Description)
+	}
+	fmt.Printf("Status: %s | Priority: %s\n", task.Status, task.Priority)
+	if task.Tags != "" {
+		fmt.Printf("Tags: %s\n", task.Tags)
+	}
+	fmt.Printf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Println()
+
+	// Parse updates
+	updates := make(map[string]string)
+
+	// Check if we have property=value format (multiple properties)
+	if len(args) >= 2 && strings.Contains(args[1], "=") {
+		// Multiple properties format: task set <id> status=completed priority=high
+		for i := 1; i < len(args); i++ {
+			parts := strings.SplitN(args[i], "=", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid property format: %s. Expected format: property=value", args[i])
+			}
+			property := strings.ToLower(strings.TrimSpace(parts[0]))
+			value := strings.TrimSpace(parts[1])
+
+			// Map common aliases to standard field names
+			switch property {
+			case "stat":
+				property = "status"
+			case "prio":
+				property = "priority"
+			case "tag":
+				property = "tags"
+			case "meta":
+				property = "metadata"
+			case "desc":
+				property = "description"
+			}
+
+			updates[property] = value
+		}
+	} else {
+		// Single property format: task set <id> <property> <value>
+		if len(args) != 3 {
+			return fmt.Errorf("usage: giggum -task set <task_id> <property> <value>")
+		}
+
+		property := strings.ToLower(strings.TrimSpace(args[1]))
+		value := strings.TrimSpace(args[2])
+
+		// Map common aliases to standard field names
+		switch property {
+		case "stat":
+			property = "status"
+		case "prio":
+			property = "priority"
+		case "tag":
+			property = "tags"
+		case "meta":
+			property = "metadata"
+		case "desc":
+			property = "description"
+		}
+
+		updates[property] = value
+	}
+
+	// Apply updates
+	fmt.Printf("🔄 Updating task %d...\n", taskID)
+	if err := taskManager.UpdateTaskMultiple(taskID, updates); err != nil {
+		return fmt.Errorf("failed to update task: %v", err)
+	}
+
+	// Show updated task
+	updatedTask, err := taskManager.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve updated task: %v", err)
+	}
+
+	fmt.Printf("\n✅ Task updated successfully!\n")
+	fmt.Printf("📝 Updated Task [%d]:\n", updatedTask.ID)
+	priorityIcon = getPriorityIcon(updatedTask.Priority)
+	statusIcon = statusIcons[updatedTask.Status]
+	fmt.Printf("%s %s %s\n", priorityIcon, statusIcon, updatedTask.Title)
+	if updatedTask.Description != "" && updatedTask.Description != updatedTask.Title {
+		fmt.Printf("Description: %s\n", updatedTask.Description)
+	}
+	fmt.Printf("Status: %s | Priority: %s\n", updatedTask.Status, updatedTask.Priority)
+	if updatedTask.Tags != "" {
+		fmt.Printf("Tags: %s\n", updatedTask.Tags)
+	}
+	fmt.Printf("Created: %s\n", updatedTask.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("Updated: %s\n", updatedTask.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+	return nil
 }
 
 func runIterations(logger *Logger, config Config, iterations int, debug bool) {

@@ -441,7 +441,7 @@ func showHelp() {
     -multi-agent    Run coordinated multi-agent session
     -list-agents    List all available agent types and their descriptions
     -show-progress  Show agent progress for current project
-    -task CMD       Task management command (list, create, add, remove, stats, import)
+    -task CMD       Task management command (list, create, add, remove, set, stats, import)
 
  EXAMPLES:
     ralph           # Run 10 iterations with default backend-developer agent
@@ -456,6 +456,8 @@ func showHelp() {
      ralph -task create    # Create task interactively
      ralph -task add "task description"  # Add task using researcher agent
      ralph -task remove   # Remove task interactively
+     ralph -task set 1 status completed  # Set task properties
+     ralph -task set 2 priority=high status=in_progress  # Set multiple properties
      ralph -task stats    # Show task statistics
      ralph -task import   # Import tasks from tasks.md file
     ralph -h        # Show this help
