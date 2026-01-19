@@ -25,6 +25,9 @@ type Logger struct {
 type Config struct {
 	PromptCommand string `json:"prompt_command"`
 	WebhookURL    string `json:"webhook_url"`
+	WaitForReply  bool   `json:"wait_for_reply"`
+	ReplyPrompt   string `json:"reply_prompt"`
+	AddToTasks    bool   `json:"add_to_tasks"`
 	// Future configuration options can be added here
 }
 
@@ -110,7 +113,12 @@ func loadConfig(logger *Logger) (*Config, error) {
 	// Check if config file exists
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
 		logger.Debug("Config file '%s' not found, using default configuration", configFile)
-		return &Config{PromptCommand: DefaultPromptCommand}, nil
+		return &Config{
+			PromptCommand: DefaultPromptCommand,
+			WaitForReply:  false,
+			ReplyPrompt:   "Enter your response (or press Enter to continue): ",
+			AddToTasks:    true,
+		}, nil
 	}
 
 	// Read config file
@@ -130,9 +138,72 @@ func loadConfig(logger *Logger) (*Config, error) {
 		config.PromptCommand = DefaultPromptCommand
 	}
 
+	// Set defaults for reply functionality
+	if config.ReplyPrompt == "" {
+		config.ReplyPrompt = "Enter your response (or press Enter to continue): "
+	}
+
 	logger.Debug("Loaded configuration from '%s'", configFile)
 
 	return &config, nil
+}
+
+// promptForReply prompts the user for input and processes their response
+func promptForReply(logger *Logger, config *Config) (string, error) {
+	if !config.WaitForReply {
+		return "", nil
+	}
+
+	fmt.Print(config.ReplyPrompt)
+	var response string
+	_, err := fmt.Scanln(&response)
+	if err != nil {
+		// Handle empty input (just pressing Enter)
+		if err.Error() == "unexpected newline" {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read user input: %v", err)
+	}
+
+	response = strings.TrimSpace(response)
+	if response == "" {
+		return "", nil
+	}
+
+	logger.Info("Received user response: %s", response)
+
+	// If configured to add to tasks.md
+	if config.AddToTasks {
+		if err := addToTasks(logger, response); err != nil {
+			logger.Warn("Failed to add response to tasks.md: %v", err)
+		}
+	}
+
+	return response, nil
+}
+
+// addToTasks adds a response to the tasks.md file
+func addToTasks(logger *Logger, response string) error {
+	// Read current tasks.md content
+	content, err := os.ReadFile("tasks.md")
+	if err != nil {
+		return fmt.Errorf("failed to read tasks.md: %v", err)
+	}
+
+	// Create new content with the response added
+	newContent := string(content)
+	if !strings.HasSuffix(newContent, "\n") {
+		newContent += "\n"
+	}
+	newContent += fmt.Sprintf("- %s\n", response)
+
+	// Write back to tasks.md
+	if err := os.WriteFile("tasks.md", []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to write to tasks.md: %v", err)
+	}
+
+	logger.Info("Added response to tasks.md: %s", response)
+	return nil
 }
 
 // sendWebhookNotification sends a notification to the configured webhook URL
@@ -311,6 +382,18 @@ func main() {
 				logger.Warn("Failed to send webhook notification: %v", err)
 			}
 			os.Exit(0)
+		}
+
+		// Prompt for reply if enabled and this is not the last iteration
+		if config.WaitForReply && i < iterations {
+			response, err := promptForReply(logger, config)
+			if err != nil {
+				logger.Warn("Failed to get user response: %v", err)
+			} else if response != "" && !config.AddToTasks {
+				// If not adding to tasks, we could potentially use this in the next iteration
+				// For now, just log that we received it
+				logger.Debug("User response received but not added to tasks: %s", response)
+			}
 		}
 	}
 

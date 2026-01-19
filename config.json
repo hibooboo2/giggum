@@ -1,4 +1,7 @@
 {
     "prompt_command": "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md",
-    "webhook_url": ""
+    "webhook_url": "",
+    "wait_for_reply": true,
+    "reply_prompt": "Enter additional tasks or feedback (or press Enter to continue): ",
+    "add_to_tasks": true
 }
