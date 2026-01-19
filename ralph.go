@@ -65,17 +65,15 @@ func main() {
 	}
 
 	// Run the autonomous coding loop
-	for i := 1; i < iterations; i++ {
-		if verbose {
-			fmt.Printf("\n--- Iteration %d/%d ---\n", i, iterations-1)
-		}
+	for i := 1; i <= iterations; i++ {
+		fmt.Printf("Running iteration %d/%d...\n", i, iterations)
 
 		// Build the opencode command
 		args := []string{"run"}
 		if verbose {
 			args = append(args, "--print-logs")
 		}
-		args = append(args, "--model", "opencode/big-pickle", "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md")
+		args = append(args, "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md")
 
 		cmd := exec.Command("opencode", args...)
 
@@ -93,7 +91,7 @@ func main() {
 			}
 
 			// Continue to next iteration instead of exiting immediately
-			if i == iterations-1 {
+			if i == iterations {
 				fmt.Fprintf(os.Stderr, "Final iteration failed. Exiting.\n")
 				os.Exit(1)
 			}
@@ -116,7 +114,7 @@ func main() {
 
 		// Check for completion signal
 		if strings.Contains(result, "<promise>COMPLETE</promise>") || strings.Contains(result, "✅ Complete ✅") {
-			fmt.Println("Task complete, exiting.")
+			fmt.Println("✅ All tasks completed!")
 			os.Exit(0)
 		}
 
