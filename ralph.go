@@ -112,9 +112,10 @@ func runIterations(logger *Logger, config Config, iterations int, debug bool) {
 		if strings.Contains(output, "✅ Complete ✅") {
 			fmt.Println("✅ All tasks completed!")
 			// Send webhook notification for early completion
-			if err := sendWebhookNotification(logger, config, i, false); err != nil {
+			if err := sendWebhookNotification(logger, config, i, true); err != nil {
 				logger.Warn("Failed to send webhook notification: %v", err)
 			}
+			return // Exit early since tasks are complete
 		}
 	}
 }
@@ -236,7 +237,7 @@ func main() {
 	runIterations(logger, *config, args.iterations, args.debug)
 
 	// Send webhook notification after completing all iterations
-	if err := sendWebhookNotification(logger, *config, -1, false); err != nil {
+	if err := sendWebhookNotification(logger, *config, args.iterations, true); err != nil {
 		logger.Warn("Failed to send webhook notification: %v", err)
 	}
 }
