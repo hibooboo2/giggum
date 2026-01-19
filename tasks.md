@@ -1,3 +1,15 @@
-- Write a paragraph summary of what giggum aims to do ✓
 
-Giggum is a Ralph Wiggum autonomous AI coding loop implementation that enables unsupervised software development through continuous AI-driven task execution. The system runs in a loop, allowing an AI agent to autonomously select, prioritize, and complete development tasks from a defined task list until all work is finished, with each iteration involving task selection, implementation, testing, and git commits. Built with Go, giggum provides multi-agent coordination with specialized AI personalities (tester, debugger, researcher, etc.), a Progressive Web App for mobile management, SQLite database persistence for session tracking, webhook integration for external notifications, and comprehensive security validation. The platform leverages the OpenCode CLI to execute AI coding operations automatically, making it possible to run long coding sessions without human intervention while maintaining code quality through integrated feedback loops and robust error handling.
+## HI PRIORITY
+- make it so that giggum projects that are avaliable on the system / that are being worked on / have been worked on can be viewed and browsed in the ui.
+- view all sessions
+- get session info
+- add tasks to any projects tasks.md via ui
+
+
+## LOW PRIORITY
+ -  fix bug around multiple websocket connections from ui on load constantly
+ - fix bug where push notifications do not actually push die to bad websockets
+
+ 
+## Nice to have do last
+- be able to get live session logs from active giggum sessions.

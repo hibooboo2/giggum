@@ -1,1 +1,0 @@
-Completed paragraph summary of giggum's purpose and functionality. Updated tasks.md with comprehensive description of autonomous AI coding loop, multi-agent system, PWA capabilities, and OpenCode CLI integration.

@@ -242,22 +242,11 @@ func (ws *WebServer) handleWebSocket(c *gin.Context) {
 	go wsConn.writePump()
 	go wsConn.readPump()
 
-	// Send existing notifications to new client
-	go func() {
-		for _, notification := range notifications {
-			select {
-			case wsConn.send <- notification:
-			default:
-				close(wsConn.send)
-				return
-			}
-		}
-	}()
 }
 
 // writePump handles sending messages to WebSocket
 func (wsc *WebSocketConnection) writePump() {
-	ticker := time.NewTicker(54 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer func() {
 		ticker.Stop()
 		wsc.conn.Close()
