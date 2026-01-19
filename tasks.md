@@ -8,9 +8,9 @@ This folder implements a Ralph Wiggum autonomous AI coding loop. Current tasks t
 - [x] Add usage documentation to ralph.sh with help flag
 - [ ] Create example PRD.json file for structured task tracking
 - [x] make ralph use golang.
-  
+
 ## Medium Priority Tasks  
-- [ ] Add feedback loop validation (check if opencode CLI is available)
+- [x] Add feedback loop validation (check if opencode CLI is available)
 - [ ] Improve error handling in ralph.sh for missing files
 - [ ] Add backup/restore functionality for progress.txt
 - [x] Create README.md with setup instructions

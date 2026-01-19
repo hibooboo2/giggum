@@ -26,19 +26,10 @@ func main() {
 		return
 	}
 
-	// Check if opencode CLI is available
-	if _, err := exec.LookPath("opencode"); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: opencode CLI is not installed or not in PATH\n")
+	// Enhanced feedback loop validation
+	if err := validateFeedbackLoops(verbose); err != nil {
+		fmt.Fprintf(os.Stderr, "Feedback loop validation failed: %v\n", err)
 		os.Exit(1)
-	}
-
-	// Check if required files exist
-	requiredFiles := []string{"tasks.md", "progress.txt", "prompt.md"}
-	for _, file := range requiredFiles {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "Error: Required file %s not found\n", file)
-			os.Exit(1)
-		}
 	}
 
 	// Parse remaining arguments for iteration count
@@ -77,6 +68,29 @@ func main() {
 			os.Exit(0)
 		}
 	}
+}
+
+func validateFeedbackLoops(verbose bool) error {
+	// Check if opencode CLI is available
+	if _, err := exec.LookPath("opencode"); err != nil {
+		return fmt.Errorf("opencode CLI not found: %v", err)
+	}
+
+	// Validate required files exist
+	requiredFiles := []string{"tasks.md", "progress.txt", "prompt.md"}
+	for _, file := range requiredFiles {
+		if _, err := os.Stat(file); os.IsNotExist(err) {
+			return fmt.Errorf("required file %s not found", file)
+		}
+	}
+
+	if verbose {
+		fmt.Println("✓ Feedback loop validation passed")
+		fmt.Println("✓ opencode CLI is available")
+		fmt.Println("✓ All required files exist")
+	}
+
+	return nil
 }
 
 func showHelp() {
