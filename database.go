@@ -375,3 +375,98 @@ func GetGlobalDBPath() string {
 func GetProjectDBPath(projectPath string) string {
 	return filepath.Join(projectPath, ".giggum.db")
 }
+
+// GetAllAgentProgress retrieves progress for all agent types in a project
+func (m *DBManager) GetAllAgentProgress(projectPath string) (map[AgentType][]AgentProgress, error) {
+	query := `
+	SELECT id, agent_type, project_path, task, status, progress, timestamp
+	FROM agent_progress
+	WHERE project_path = ?
+	ORDER BY agent_type, timestamp DESC`
+
+	rows, err := m.db.Query(query, projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query all agent progress: %v", err)
+	}
+	defer rows.Close()
+
+	progress := make(map[AgentType][]AgentProgress)
+	for rows.Next() {
+		var p AgentProgress
+		var timestampStr string
+
+		err := rows.Scan(&p.ID, &p.AgentType, &p.ProjectPath, &p.Task, &p.Status, &p.Progress, &timestampStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan progress row: %v", err)
+		}
+
+		// Parse timestamp
+		if timestampStr != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", timestampStr); err == nil {
+				p.Timestamp = t
+			}
+		}
+
+		progress[p.AgentType] = append(progress[p.AgentType], p)
+	}
+
+	return progress, rows.Err()
+}
+
+// GetProjectStats retrieves statistics for a project
+func (m *DBManager) GetProjectStats(projectPath string) (map[string]interface{}, error) {
+	stats := make(map[string]interface{})
+
+	// Get total sessions per agent type
+	sessionQuery := `
+	SELECT agent_type, COUNT(*) as session_count
+	FROM agent_sessions
+	WHERE project_path = ?
+	GROUP BY agent_type`
+
+	sessionRows, err := m.db.Query(sessionQuery, projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query session stats: %v", err)
+	}
+	defer sessionRows.Close()
+
+	sessionStats := make(map[string]int)
+	for sessionRows.Next() {
+		var agentType string
+		var count int
+		if err := sessionRows.Scan(&agentType, &count); err != nil {
+			continue
+		}
+		sessionStats[agentType] = count
+	}
+	stats["sessions"] = sessionStats
+
+	// Get progress stats per agent type
+	progressQuery := `
+	SELECT agent_type, status, COUNT(*) as count
+	FROM agent_progress
+	WHERE project_path = ?
+	GROUP BY agent_type, status`
+
+	progressRows, err := m.db.Query(progressQuery, projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query progress stats: %v", err)
+	}
+	defer progressRows.Close()
+
+	progressStats := make(map[string]map[string]int)
+	for progressRows.Next() {
+		var agentType, status string
+		var count int
+		if err := progressRows.Scan(&agentType, &status, &count); err != nil {
+			continue
+		}
+		if progressStats[agentType] == nil {
+			progressStats[agentType] = make(map[string]int)
+		}
+		progressStats[agentType][status] = count
+	}
+	stats["progress"] = progressStats
+
+	return stats, nil
+}
