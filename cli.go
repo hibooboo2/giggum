@@ -12,8 +12,8 @@ type CLIArgs struct {
 	agentType    string
 	timeout      int
 	showProgress bool
-	multiAgent   bool
-	taskCommand  string
+
+	taskCommand string
 }
 
 func parseFlags() CLIArgs {
@@ -28,7 +28,7 @@ func parseFlags() CLIArgs {
 	flag.StringVar(&args.agentType, "agent", "backend-developer", "Specify agent type (tester, debugger, researcher, backend-developer, frontend-developer, ux, ui, marketer, feedbackseeker, simplifier, documentationwriter). Agent-only execution is enforced.")
 	flag.IntVar(&args.timeout, "timeout", 30, "Agent timeout in minutes (default: 30)")
 	flag.BoolVar(&args.showProgress, "show-progress", false, "Show agent progress for current project")
-	flag.BoolVar(&args.multiAgent, "multi-agent", false, "Run coordinated multi-agent session")
+
 	flag.StringVar(&args.taskCommand, "task", "", "Task command (list, create, add, remove, stats, import)")
 	flag.Parse()
 	return args

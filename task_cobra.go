@@ -94,6 +94,73 @@ var taskStatsCmd = &cobra.Command{
 	},
 }
 
+var taskExecuteCmd = &cobra.Command{
+	Use:   "execute <taskID>",
+	Short: "Execute a task with the best suited agent",
+	Long: `Execute a specific task using intelligent agent selection.
+The system will analyze the task content and choose the most appropriate agent type for the job.`,
+	Args: cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		// Create logger
+		logger, err := NewLogger("INFO", verbose, "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating logger: %v\n", err)
+			os.Exit(1)
+		}
+		defer logger.Close()
+
+		// Load configuration
+		config, err := loadConfig(logger)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Override config with command line agent settings
+		config.UseAgents = true
+		config.AgentType = BackendDeveloper // Default fallback
+
+		// Override timeout with command line value if provided
+		if timeout > 0 {
+			config.AgentTimeout = timeout
+		}
+
+		// Parse task ID
+		var taskID int64
+		_, err = fmt.Sscanf(args[0], "%d", &taskID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid task ID: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Get the task
+		task, err := taskManager.GetTask(taskID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error getting task: %v\n", err)
+			os.Exit(1)
+		}
+
+		if task.Status == "completed" {
+			fmt.Printf("Task %d is already completed.\n", taskID)
+			return
+		}
+
+		// Execute the task with the best suited agent
+		err = executeTaskWithAgent(logger, config, *task, debug)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error executing task: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Send webhook notification after completing task
+		if webhookErr := sendWebhookNotification(logger, config, 1, true); webhookErr != nil {
+			logger.Warn("Failed to send webhook notification: %v", webhookErr)
+		}
+
+		fmt.Printf("Task %d executed successfully.\n", taskID)
+	},
+}
+
 func init() {
 	// Add subcommands to task command
 	taskCmd.AddCommand(taskListCmd)
@@ -102,4 +169,5 @@ func init() {
 	taskCmd.AddCommand(taskRemoveCmd)
 	taskCmd.AddCommand(taskSetCmd)
 	taskCmd.AddCommand(taskStatsCmd)
+	taskCmd.AddCommand(taskExecuteCmd)
 }

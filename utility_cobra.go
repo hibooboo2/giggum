@@ -23,6 +23,44 @@ var agentsListCmd = &cobra.Command{
 	},
 }
 
+var agentsExecuteCmd = &cobra.Command{
+	Use:   "execute",
+	Short: "Run coordinated multi-agent session",
+	Long: `Execute tasks using multiple coordinated agents.
+The system will analyze pending tasks and assign them to the most appropriate agents based on task content and priorities.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Create logger
+		logger, err := NewLogger("INFO", verbose, "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating logger: %v\n", err)
+			os.Exit(1)
+		}
+		defer logger.Close()
+
+		// Load configuration
+		config, err := loadConfig(logger)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading configuration: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Override config with command line agent settings
+		config.UseAgents = true
+		config.AgentType = BackendDeveloper // Default fallback
+
+		// Override timeout with command line value if provided
+		if timeout > 0 {
+			config.AgentTimeout = timeout
+		}
+
+		// Run multi-agent session
+		if err := runMultiAgentSession(logger, config, iterations, debug); err != nil {
+			fmt.Fprintf(os.Stderr, "Error in multi-agent session: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
 var showProgressCmd = &cobra.Command{
 	Use:   "show-progress",
 	Short: "Show agent progress for current project",
@@ -71,6 +109,7 @@ var restoreCmd = &cobra.Command{
 }
 
 func init() {
-	// Add list subcommand to agents command group
+	// Add subcommands to agents command group
 	agentsCmd.AddCommand(agentsListCmd)
+	agentsCmd.AddCommand(agentsExecuteCmd)
 }

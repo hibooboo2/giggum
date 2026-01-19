@@ -37,7 +37,6 @@ var (
 	agentType  string
 	timeout    int
 	iterations int
-	multiAgent bool
 )
 
 func init() {
@@ -49,7 +48,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&agentType, "agent", "backend-developer", "Specify agent type (tester, debugger, researcher, backend-developer, frontend-developer, ux, ui, marketer, feedbackseeker, simplifier, documentationwriter). Agent-only execution is enforced.")
 	rootCmd.PersistentFlags().IntVar(&timeout, "timeout", 30, "Agent timeout in minutes (default: 30)")
 	rootCmd.PersistentFlags().IntVarP(&iterations, "iterations", "n", 10, "Number of iterations to run")
-	rootCmd.PersistentFlags().BoolVar(&multiAgent, "multi-agent", false, "Run coordinated multi-agent session")
 
 	// Add subcommands
 	rootCmd.AddCommand(taskCmd)
@@ -96,15 +94,6 @@ func executeMain() {
 	}
 
 	logger.Info("CLI: Agent-only execution enforced with %s agent (timeout: %d minutes)", config.AgentType, config.AgentTimeout)
-
-	// Handle multi-agent mode
-	if multiAgent {
-		if err := runMultiAgentSession(logger, config, iterations, debug); err != nil {
-			fmt.Fprintf(os.Stderr, "Error in multi-agent session: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
 
 	// Validate agent type - always required since we use agent-only execution
 	if config.AgentType != "" {

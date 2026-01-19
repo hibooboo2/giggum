@@ -98,8 +98,8 @@ func showAgentProgress() {
 	}
 }
 
-// runMultiAgentSession coordinates multiple agents to work on tasks
-func runMultiAgentSession(logger *Logger, config Config, iterations int, debug bool) error {
+// executeTaskWithAgent executes a single task with the best suited agent
+func executeTaskWithAgent(logger *Logger, config Config, task Task, debug bool) error {
 	// Define agent priorities for different task types
 	agentPriority := []AgentType{
 		BackendDeveloper,
@@ -115,6 +115,54 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 		Simplifier,
 	}
 
+	// Determine the best agent for this task
+	agentType := selectBestAgentForTask(task.Title+task.Description, agentPriority)
+
+	if task.Status == "failed" {
+		agentType = Researcher
+		task.Description += " This task has ben tried before by 2 other people and they have failed. Please do some reseaerch to see what is wrong when attempting this task and create a report on why the task failed."
+	}
+
+	fmt.Printf("Using %s agent for task: %+v\n", agentType, task)
+
+	// Update task status to in_progress
+	err := taskManager.UpdateTaskStatus(task.ID, "in_progress")
+	if err != nil {
+		return fmt.Errorf("failed to update task status: %w", err)
+	}
+
+	// Run the agent
+	err = runAgent(logger, agentType, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v```", task), debug, config.AgentTimeout)
+	if err != nil {
+		logger.Warn("Agent %s failed on task '%s': %v", agentType, task, err)
+		taskManager.UpdateTaskStatus(task.ID, "debugging")
+		// Try with a different agent as fallback
+		if agentType != Debugger {
+			fmt.Printf("Retrying with Debugger agent...\n")
+			err := runAgent(logger, Debugger, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v``` keep in mind your collegue just tried to do this and left the repo in a state that needs to be fixed", task), debug, config.AgentTimeout)
+			if err != nil {
+				logger.Error("Debugger also failed on task '%s': %v", task, err)
+				taskManager.UpdateTaskStatus(task.ID, "failed")
+				return fmt.Errorf("both primary agent and debugger failed: %w", err)
+			}
+		} else {
+			taskManager.UpdateTaskStatus(task.ID, "failed")
+			return fmt.Errorf("agent %s failed: %w", agentType, err)
+		}
+	}
+
+	// Mark task as completed
+	err = taskManager.UpdateTaskStatus(task.ID, "completed")
+	if err != nil {
+		logger.Error("Failed to update task status:", err)
+		return fmt.Errorf("failed to mark task as completed: %w", err)
+	}
+
+	return nil
+}
+
+// runMultiAgentSession coordinates multiple agents to work on tasks
+func runMultiAgentSession(logger *Logger, config Config, iterations int, debug bool) error {
 	tasks, err := taskManager.GetAllTasks()
 	if err != nil {
 		return fmt.Errorf("failed to get tasks: %w", err)
@@ -124,58 +172,24 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 	})
 	fmt.Printf("Starting multi-agent session with %d tasks\n", len(tasks))
 
-	for i := 0; i < iterations && i < len(tasks); i++ {
-		task := tasks[i]
+	completedTasks := 0
+	for i, task := range tasks {
 		if task.Status == "completed" {
 			continue
 		}
 
-		// Determine the best agent for this task
-		agentType := selectBestAgentForTask(task.Title+task.Description, agentPriority)
+		fmt.Printf("Iteration %d/%d: ", completedTasks+1, iterations)
 
-		if task.Status == "failed" {
-			agentType = Researcher
-			task.Description += " This task has ben tried before by 2 other people and they have failed. Please do some reseaerch to see what is wrong when attempting this task and create a report on why the task failed."
-		}
-
-		fmt.Printf("Iteration %d/%d: Using %s agent for task: %+v\n", i+1, iterations, agentType, task)
-
-		// Run the agent
-		err = taskManager.UpdateTaskStatus(task.ID, "in_progress")
+		err := executeTaskWithAgent(logger, config, task, debug)
 		if err != nil {
-			logger.Error("Failed to update task status:", err)
+			logger.Warn("Failed to execute task %d: %v", task.ID, err)
 			continue
 		}
 
-		err := runAgent(logger, agentType, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v```", task), debug, config.AgentTimeout)
-		if err != nil {
-			logger.Warn("Agent %s failed on task '%s': %v", agentType, task, err)
-			taskManager.UpdateTaskStatus(task.ID, "debugging")
-			// Try with a different agent as fallback
-			if agentType != Debugger {
-				fmt.Printf("Retrying with Debugger agent...\n")
-				err := runAgent(logger, Debugger, fmt.Sprintf("Please follow the instructions in @prompt.md Task:```\n\t%+v``` keep in mind your collegue just tried to do this and left the repo in a state that needs to be fixed", task), debug, config.AgentTimeout)
-				if err != nil {
-					logger.Error("Debugger also failed on task '%s': %v", task, err)
-					taskManager.UpdateTaskStatus(task.ID, "failed")
-					continue
-				}
-			}
-		}
-
-		err = taskManager.UpdateTaskStatus(task.ID, "completed")
-		if err != nil {
-			logger.Error("Failed to update task status:", err)
-			continue
-		}
+		completedTasks++
 
 		if webhookErr := sendWebhookNotification(logger, config, i, true); webhookErr != nil {
 			logger.Warn("Failed to send webhook notification: %v", webhookErr)
-		}
-
-		// Add separator between tasks
-		if i < iterations-1 && i < len(tasks)-1 {
-			fmt.Printf("\n%s\n\n", strings.Repeat("-", 50))
 		}
 	}
 
@@ -420,7 +434,7 @@ func showHelp() {
     -backup         Backup progress.txt before running
     -restore        Restore progress.txt from latest backup and exit
     -agent TYPE     Use specific agent type (default: backend-developer, see 'agents list' for available types)
-    -multi-agent    Run coordinated multi-agent session
+    -agents execute  Run coordinated multi-agent session
     -agents list    List all available agent types and their descriptions
     -show-progress  Show agent progress for current project
     -task CMD       Task management command (list, create, add, remove, set, stats, import)
@@ -431,7 +445,7 @@ func showHelp() {
     ralph -n 20 -v  # Run 20 iterations with verbose output
     ralph -debug    # Run with debug output (shows opencode logs)
     ralph -agent tester  # Run using the tester agent
-    ralph -multi-agent   # Run coordinated multi-agent session
+     ralph agents execute   # Run coordinated multi-agent session
     ralph -show-progress # Show agent progress
     ralph agents list  # Show all available agent types
      ralph -task list     # List all tasks from database

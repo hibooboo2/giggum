@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/spf13/cobra"
 	"testing"
 )
 
@@ -14,18 +15,45 @@ func TestAgentsCommand(t *testing.T) {
 		t.Errorf("Expected agents command short description 'Manage and interact with agents', got '%s'", agentsCmd.Short)
 	}
 
-	// Test that agents command has list subcommand
-	if len(agentsCmd.Commands()) != 1 {
-		t.Errorf("Expected agents command to have 1 subcommand, got %d", len(agentsCmd.Commands()))
+	// Test that agents command has list and execute subcommands
+	if len(agentsCmd.Commands()) != 2 {
+		t.Errorf("Expected agents command to have 2 subcommands, got %d", len(agentsCmd.Commands()))
 	}
 
-	listCmd := agentsCmd.Commands()[0]
-	if listCmd.Use != "list" {
-		t.Errorf("Expected agents list subcommand use 'list', got '%s'", listCmd.Use)
+	// Find list subcommand
+	var listCmd *cobra.Command
+	for _, cmd := range agentsCmd.Commands() {
+		if cmd.Use == "list" {
+			listCmd = cmd
+			break
+		}
+	}
+
+	if listCmd == nil {
+		t.Error("Expected agents command to have 'list' subcommand")
+		return
 	}
 
 	if listCmd.Short != "List all available agent types" {
 		t.Errorf("Expected agents list subcommand short description 'List all available agent types', got '%s'", listCmd.Short)
+	}
+
+	// Find execute subcommand
+	var executeCmd *cobra.Command
+	for _, cmd := range agentsCmd.Commands() {
+		if cmd.Use == "execute" {
+			executeCmd = cmd
+			break
+		}
+	}
+
+	if executeCmd == nil {
+		t.Error("Expected agents command to have 'execute' subcommand")
+		return
+	}
+
+	if executeCmd.Short != "Run coordinated multi-agent session" {
+		t.Errorf("Expected agents execute subcommand short description 'Run coordinated multi-agent session', got '%s'", executeCmd.Short)
 	}
 }
 
