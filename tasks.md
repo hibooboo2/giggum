@@ -12,7 +12,7 @@ This folder implements a Ralph Wiggum autonomous AI coding loop. Current tasks t
 
 
 ## Low Priority Tasks
-- [ ] Add logging and debug output options (ONLY USE STD LIB SLOG LIBRARY) no log file
+- [x] Add logging and debug output options (ONLY USE STD LIB SLOG LIBRARY) no log file
 
 ## Last task
 - [ ] Ensure all code is simple. Make sure usage and commands from cli for ralph.go does not require anything to use easily.
