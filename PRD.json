@@ -51,7 +51,7 @@
       "description": "Add feedback loop validation to ralph.sh",
       "steps": [
         "Check if opencode CLI is available before execution",
-        "Validate required files exist (tasks.md, progress.txt, prompt.md)",
+        "Validate required files exist (progress.txt, prompt.md)",
         "Add file format validation",
         "Implement graceful error handling",
         "Add informative error messages"

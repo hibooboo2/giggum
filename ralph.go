@@ -88,8 +88,6 @@ func handleTaskCommand(command string) error {
 		return removeTaskInteractively(taskManager)
 	case "stats":
 		return displayTaskStats(taskManager)
-	case "import":
-		return importTasksFromMarkdown(taskManager)
 	default:
 		return fmt.Errorf("unknown task command: %s. Available: list, create, add, remove, stats, import", command)
 	}
@@ -357,33 +355,6 @@ func displayTaskStats(taskManager *TaskManager) error {
 			icon := getPriorityIcon(priority)
 			fmt.Printf("  %s %s: %d\n", icon, strings.Title(priority), count)
 		}
-	}
-
-	return nil
-}
-
-func importTasksFromMarkdown(taskManager *TaskManager) error {
-	// Check if tasks.md exists
-	if _, err := os.Stat("tasks.md"); os.IsNotExist(err) {
-		return fmt.Errorf("tasks.md file not found. Please create it first.")
-	}
-
-	content, err := os.ReadFile("tasks.md")
-	if err != nil {
-		return fmt.Errorf("failed to read tasks.md: %v", err)
-	}
-
-	err = taskManager.ImportTasksFromMarkdown(string(content))
-	if err != nil {
-		return fmt.Errorf("failed to import tasks: %v", err)
-	}
-
-	fmt.Println("✅ Tasks imported successfully from tasks.md")
-
-	// Show count of imported tasks
-	tasks, err := taskManager.GetAllTasks()
-	if err == nil {
-		fmt.Printf("📝 Total tasks in database: %d\n", len(tasks))
 	}
 
 	return nil

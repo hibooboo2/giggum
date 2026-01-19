@@ -23,7 +23,7 @@ func TestRunIterationsAgentOnly(t *testing.T) {
 	}
 
 	// Create required files
-	requiredFiles := []string{"tasks.md", "progress.txt", "prompt.md"}
+	requiredFiles := []string{"progress.txt", "prompt.md"}
 	for _, file := range requiredFiles {
 		err = os.WriteFile(file, []byte("# test content"), 0644)
 		if err != nil {
