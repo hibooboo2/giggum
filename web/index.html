@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Giggum - AI Agent Management</title>
+    <meta name="description" content="Progressive Web App for managing Giggum AI agents">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    
+    <!-- PWA meta tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Giggum">
+    <link rel="apple-touch-icon" href="/static/icon-192x192.png">
+    
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🤖 Giggum</h1>
+            <p class="subtitle">AI Agent Management System</p>
+        </header>
+
+        <main class="main">
+            <section class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Loading agents...</p>
+            </section>
+
+            <section class="error" id="error" style="display: none;">
+                <h2>❌ Error</h2>
+                <p id="error-message">Failed to load agents.</p>
+                <button onclick="loadAgents()" class="retry-btn">Retry</button>
+            </section>
+
+            <section class="agents" id="agents" style="display: none;">
+                <div class="agents-header">
+                    <h2>Available Agents</h2>
+                    <div class="header-actions">
+                        <div class="agent-count" id="agent-count">0 agents</div>
+                        <button onclick="toggleNotifications()" class="notification-btn">
+                            🔔 <span id="notification-badge">0</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="agent-grid" id="agent-grid">
+                    <!-- Agents will be dynamically loaded here -->
+                </div>
+            </section>
+
+            <section class="agent-detail" id="agent-detail" style="display: none;">
+                <button onclick="backToList()" class="back-btn">← Back to Agents</button>
+                <div class="agent-card-detail">
+                    <h2 id="detail-name"></h2>
+                    <p id="detail-description"></p>
+                    <div class="agent-prompts">
+                        <h3>System Prompt</h3>
+                        <pre id="detail-system-prompt"></pre>
+                        <h3>Task Prompt</h3>
+                        <pre id="detail-task-prompt"></pre>
+                    </div>
+                </div>
+            </section>
+
+            <section class="notifications-panel" id="notifications-panel" style="display: none;">
+                <div class="notifications-header">
+                    <h2>🔔 Notifications</h2>
+                    <button onclick="toggleNotifications()" class="close-btn">✕</button>
+                </div>
+                <div class="notifications-list" id="notifications-list">
+                    <!-- Notifications will be loaded here -->
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>&copy; 2026 Giggum - Progressive Web App</p>
+        </footer>
+    </div>
+
+    <script src="/static/app.js"></script>
+    <script>
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('SW registered: ', registration);
+                    })
+                    .catch(registrationError => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>

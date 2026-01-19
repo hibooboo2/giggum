@@ -22,6 +22,8 @@ type CLIArgs struct {
 	listAgents   bool
 	showProgress bool
 	multiAgent   bool
+	webServer    bool
+	webPort      int
 }
 
 func parseFlags() CLIArgs {
@@ -38,6 +40,8 @@ func parseFlags() CLIArgs {
 	flag.BoolVar(&args.listAgents, "list-agents", false, "List all available agent types")
 	flag.BoolVar(&args.showProgress, "show-progress", false, "Show agent progress for current project")
 	flag.BoolVar(&args.multiAgent, "multi-agent", false, "Run coordinated multi-agent session")
+	flag.BoolVar(&args.webServer, "web-server", false, "Start web server for PWA")
+	flag.IntVar(&args.webPort, "web-port", 8080, "Port for web server (default: 8080)")
 	flag.Parse()
 	return args
 }
@@ -131,6 +135,11 @@ func main() {
 
 	if args.help {
 		showHelp()
+		return
+	}
+
+	if args.webServer {
+		startWebServer(args.webPort)
 		return
 	}
 
@@ -229,5 +238,18 @@ func main() {
 	// Send webhook notification after completing all iterations
 	if err := sendWebhookNotification(logger, *config, -1, false); err != nil {
 		logger.Warn("Failed to send webhook notification: %v", err)
+	}
+}
+
+// startWebServer starts the web server for PWA integration
+func startWebServer(port int) {
+	fmt.Printf("Starting giggum web server on port %d...\n", port)
+	fmt.Printf("PWA will be available at: http://localhost:%d\n", port)
+	fmt.Printf("API endpoints available at: http://localhost:%d/api\n", port)
+
+	server := NewWebServer(port)
+	if err := server.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start web server: %v\n", err)
+		os.Exit(1)
 	}
 }
