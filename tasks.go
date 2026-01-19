@@ -161,11 +161,23 @@ func (tm *TaskManager) CreateTask(title, description, priority string) (*Task, e
 
 // CreateTaskWithStatus creates a new task in the database with specified status
 func (tm *TaskManager) CreateTaskWithStatus(title, description, priority, status string) (*Task, error) {
+	// Validate inputs
+	if strings.TrimSpace(title) == "" {
+		return nil, fmt.Errorf("task title cannot be empty")
+	}
+
+	validPriorities := map[string]bool{"low": true, "medium": true, "high": true}
 	if priority == "" {
 		priority = "medium"
+	} else if !validPriorities[strings.ToLower(priority)] {
+		return nil, fmt.Errorf("invalid priority: %s (must be low, medium, or high)", priority)
 	}
+
+	validStatuses := map[string]bool{"pending": true, "in_progress": true, "completed": true, "cancelled": true}
 	if status == "" {
 		status = "pending"
+	} else if !validStatuses[strings.ToLower(status)] {
+		return nil, fmt.Errorf("invalid status: %s (must be pending, in_progress, completed, or cancelled)", status)
 	}
 
 	query := `
@@ -211,8 +223,17 @@ func (tm *TaskManager) GetTask(id int64) (*Task, error) {
 
 	// Handle nullable fields
 	if completedAt.Valid {
-		if t, err := time.Parse("2006-01-02 15:04:05", completedAt.String); err == nil {
-			task.CompletedAt = &t
+		// Try multiple time formats
+		formats := []string{
+			"2006-01-02 15:04:05",
+			time.RFC3339,
+			time.RFC3339Nano,
+		}
+		for _, format := range formats {
+			if t, err := time.Parse(format, completedAt.String); err == nil {
+				task.CompletedAt = &t
+				break
+			}
 		}
 	}
 	if tags.Valid {
@@ -273,6 +294,12 @@ func (tm *TaskManager) GetAllTasks() ([]Task, error) {
 
 // UpdateTaskStatus updates the status of a task
 func (tm *TaskManager) UpdateTaskStatus(id int64, newStatus string) error {
+	// Validate status
+	validStatuses := map[string]bool{"pending": true, "in_progress": true, "completed": true, "cancelled": true}
+	if !validStatuses[newStatus] {
+		return fmt.Errorf("invalid status: %s. Must be one of: pending, in_progress, completed, cancelled", newStatus)
+	}
+
 	// Get current status first
 	task, err := tm.GetTask(id)
 	if err != nil {
@@ -286,18 +313,26 @@ func (tm *TaskManager) UpdateTaskStatus(id int64, newStatus string) error {
 	}
 	defer tx.Rollback()
 
-	// Update task status
-	var completedAt interface{}
-	if newStatus == "completed" {
-		completedAt = time.Now()
-	}
-
+	// Update task status with proper completed_at handling
 	updateQuery := `
 	UPDATE tasks 
-	SET status = ?, updated_at = CURRENT_TIMESTAMP, completed_at = ?
-	WHERE id = ?`
+	SET status = ?, updated_at = CURRENT_TIMESTAMP`
 
-	_, err = tx.Exec(updateQuery, newStatus, completedAt, id)
+	var args []interface{}
+	args = append(args, newStatus)
+
+	if newStatus == "completed" {
+		updateQuery += ", completed_at = ?"
+		args = append(args, time.Now().UTC().Format("2006-01-02 15:04:05"))
+	} else {
+		// Clear completed_at if status changed away from completed
+		updateQuery += ", completed_at = NULL"
+	}
+
+	updateQuery += " WHERE id = ?"
+	args = append(args, id)
+
+	_, err = tx.Exec(updateQuery, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update task status: %v", err)
 	}
