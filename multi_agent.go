@@ -419,9 +419,9 @@ func showHelp() {
     -n N            Number of iterations to run (default: 10)
     -backup         Backup progress.txt before running
     -restore        Restore progress.txt from latest backup and exit
-    -agent TYPE     Use specific agent type (default: backend-developer, see -list-agents for available types)
+    -agent TYPE     Use specific agent type (default: backend-developer, see 'agents list' for available types)
     -multi-agent    Run coordinated multi-agent session
-    -list-agents    List all available agent types and their descriptions
+    -agents list    List all available agent types and their descriptions
     -show-progress  Show agent progress for current project
     -task CMD       Task management command (list, create, add, remove, set, stats, import)
 
@@ -433,7 +433,7 @@ func showHelp() {
     ralph -agent tester  # Run using the tester agent
     ralph -multi-agent   # Run coordinated multi-agent session
     ralph -show-progress # Show agent progress
-    ralph -list-agents  # Show all available agent types
+    ralph agents list  # Show all available agent types
      ralph -task list     # List all tasks from database
      ralph -task create    # Create task interactively
      ralph -task add "task description"  # Add task using researcher agent
@@ -453,7 +453,7 @@ func showHelp() {
     - config.json   Custom prompt command and agent settings
 
  AGENT TYPES:
-    Use -list-agents to see all available agent types and their descriptions.
+    Use 'agents list' to see all available agent types and their descriptions.
 
 `)
 }

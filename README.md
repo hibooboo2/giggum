@@ -102,7 +102,7 @@ Run the autonomous loop (default 10 iterations):
 - `-restore` - Restore progress.txt from latest backup and exit
 - `-agent <type>` - Use specific agent type (tester, debugger, researcher, etc.)
 - `-use-agents` - Enable multi-agent mode
-- `-list-agents` - List all available agent types
+- `agents list` - List all available agent types
 - `-show-progress` - Show agent progress for current project
 - `-multi-agent` - Run coordinated multi-agent session
 - `-web-server` - Start web server for PWA access
@@ -130,7 +130,7 @@ Run the autonomous loop (default 10 iterations):
 ./ralph -agent tester -n 10
 
 # List available agents
-./ralph -list-agents
+./ralph agents list
 
 # Show agent progress
 ./ralph -show-progress
@@ -194,7 +194,7 @@ Giggum now supports a comprehensive multi-agent system with specialized AI perso
 ./ralph -multi-agent -n 20
 
 # List all available agents
-./ralph -list-agents
+./ralph agents list
 
 # Check current project progress
 ./ralph -show-progress

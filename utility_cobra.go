@@ -7,8 +7,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var listAgentsCmd = &cobra.Command{
-	Use:   "list-agents",
+// Agents command group
+var agentsCmd = &cobra.Command{
+	Use:   "agents",
+	Short: "Manage and interact with agents",
+	Long:  `Commands for managing and interacting with different agent types.`,
+}
+
+var agentsListCmd = &cobra.Command{
+	Use:   "list",
 	Short: "List all available agent types",
 	Long:  `Display all available agent types with their descriptions.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -61,4 +68,9 @@ var restoreCmd = &cobra.Command{
 			os.Exit(1)
 		}
 	},
+}
+
+func init() {
+	// Add list subcommand to agents command group
+	agentsCmd.AddCommand(agentsListCmd)
 }

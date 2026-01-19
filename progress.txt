@@ -1,0 +1,8 @@
+Progress tracking file
+
+2026-01-19: Successfully refactored CLI command structure for agents management.
+- Moved list-agents from top-level to agents subcommand group
+- Changed command structure from 'giggum list-agents' to 'giggum agents list'
+- Created comprehensive CLI tests for new structure
+- Updated all documentation references
+- Removed legacy CLI flags that are no longer used

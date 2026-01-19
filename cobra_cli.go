@@ -53,7 +53,7 @@ func init() {
 
 	// Add subcommands
 	rootCmd.AddCommand(taskCmd)
-	rootCmd.AddCommand(listAgentsCmd)
+	rootCmd.AddCommand(agentsCmd)
 	rootCmd.AddCommand(showProgressCmd)
 	rootCmd.AddCommand(backupCmd)
 	rootCmd.AddCommand(restoreCmd)
@@ -111,7 +111,7 @@ func executeMain() {
 		if _, err := GetAgentPrompt(config.AgentType); err != nil {
 			logger.Error("Invalid agent type '%s': %v", config.AgentType, err)
 			fmt.Fprintf(os.Stderr, "Error: Invalid agent type '%s'. This system requires agent-only execution.\n", config.AgentType)
-			fmt.Fprintf(os.Stderr, "Use 'giggum list-agents' to see available agent types.\n")
+			fmt.Fprintf(os.Stderr, "Use 'giggum agents list' to see available agent types.\n")
 			os.Exit(1)
 		}
 		logger.Info("Agent type '%s' validated successfully", config.AgentType)
