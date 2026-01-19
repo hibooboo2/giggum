@@ -15,7 +15,7 @@ fi
 # For each iteration, run Claude Code with the following prompt.
 # This prompt is basic, we'll expand it later.
 for ((i=1; i<$cnt; i++)); do
-  result=$(opencode run $debug --model opencode/big-pickle "@tasks.md @progress.txt @prompt.md execute the prompt in promot.md @tasks.md @progress.txt @prompt.md execute the prompt in promot.md")
+  result=$(opencode run $debug --model opencode/big-pickle "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md")
 
   echo "$result"
 
