@@ -1,0 +1,2 @@
+Session started - working on summarizing what this folder does.
+✅ COMPLETED: Summarized folder purpose in tasks.md. This is a Ralph Wiggum autonomous AI coding loop implementation with scripts, prompts, task tracking, and documentation.
