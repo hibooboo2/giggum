@@ -513,7 +513,10 @@ func (wsc *WebSocketConnection) writePump() {
 func (wsc *WebSocketConnection) readPump() {
 	defer func() {
 		wsc.mutex.Lock()
-		wsc.closed = true
+		if !wsc.closed {
+			wsc.closed = true
+			log.Printf("WebSocket connection closed by client")
+		}
 		wsc.mutex.Unlock()
 		wsc.conn.Close()
 	}()
@@ -529,7 +532,9 @@ func (wsc *WebSocketConnection) readPump() {
 		_, _, err := wsc.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket error: %v", err)
+				log.Printf("WebSocket unexpected error: %v", err)
+			} else {
+				log.Printf("WebSocket connection closed: %v", err)
 			}
 			break
 		}
@@ -538,17 +543,29 @@ func (wsc *WebSocketConnection) readPump() {
 
 // broadcastNotification sends a notification to all connected WebSocket clients
 func (ws *WebServer) broadcastNotification(notification NotificationMessage) {
+	// Clean up closed connections before broadcasting
+	ws.cleanupConnections()
+
 	ws.connectionsMux.RLock()
 	defer ws.connectionsMux.RUnlock()
 
+	sentCount := 0
 	for _, conn := range ws.connections {
-		select {
-		case conn.send <- notification:
-		default:
-			// Can't send, connection is probably closed
-			close(conn.send)
+		conn.mutex.Lock()
+		if !conn.closed {
+			select {
+			case conn.send <- notification:
+				sentCount++
+			default:
+				// Can't send, connection is probably closed
+				close(conn.send)
+				conn.closed = true
+			}
 		}
+		conn.mutex.Unlock()
 	}
+
+	log.Printf("Broadcast notification sent to %d/%d WebSocket clients", sentCount, len(ws.connections))
 }
 
 // cleanupConnections removes closed connections
@@ -561,9 +578,23 @@ func (ws *WebServer) cleanupConnections() {
 		conn.mutex.Lock()
 		if !conn.closed {
 			activeConnections = append(activeConnections, conn)
+		} else {
+			// Close the send channel for closed connections
+			select {
+			case <-conn.send:
+				// Channel already closed
+			default:
+				close(conn.send)
+			}
 		}
 		conn.mutex.Unlock()
 	}
 
+	prevCount := len(ws.connections)
 	ws.connections = activeConnections
+	newCount := len(ws.connections)
+
+	if prevCount != newCount {
+		log.Printf("Cleaned up %d closed WebSocket connections. Active connections: %d", prevCount-newCount, newCount)
+	}
 }

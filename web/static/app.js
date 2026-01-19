@@ -7,6 +7,7 @@ let isLoading = false;
 let notificationInterval = null;
 let websocket = null;
 let reconnectAttempts = 0;
+let reconnectTimeout = null;
 const maxReconnectAttempts = 5;
 
 // DOM elements
@@ -436,6 +437,13 @@ function toggleNotifications() {
 
 // Initialize WebSocket connection
 function initWebSocket() {
+    // Close existing connection if any
+    if (websocket && websocket.readyState !== WebSocket.CLOSED) {
+        console.log('Closing existing WebSocket connection before creating new one');
+        websocket.close();
+        websocket = null;
+    }
+
     if (!isOnline()) {
         console.log('App is offline, skipping WebSocket connection');
         setTimeout(initWebSocket, 5000);
@@ -467,7 +475,11 @@ function initWebSocket() {
             console.log('WebSocket connection closed:', event.code, event.reason);
             websocket = null;
             updateConnectionStatus('disconnected');
-            attemptReconnect();
+            
+            // Only attempt to reconnect if the app is still online and this wasn't a manual close
+            if (isOnline() && event.code !== 1000) {
+                attemptReconnect();
+            }
         };
 
         websocket.onerror = (error) => {
@@ -476,6 +488,7 @@ function initWebSocket() {
 
     } catch (err) {
         console.error('Failed to create WebSocket connection:', err);
+        websocket = null;
         fallbackToPolling();
     }
 }
@@ -523,9 +536,20 @@ function showToastNotification(notification) {
 
 // Attempt to reconnect WebSocket
 function attemptReconnect() {
+    // Clear any existing reconnect timeout
+    if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+    }
+
     if (reconnectAttempts >= maxReconnectAttempts) {
         console.log('Max reconnection attempts reached, falling back to polling');
         fallbackToPolling();
+        return;
+    }
+
+    if (!isOnline()) {
+        console.log('App is offline, postponing reconnection');
         return;
     }
 
@@ -534,7 +558,10 @@ function attemptReconnect() {
     
     console.log(`Attempting to reconnect WebSocket in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
     
-    setTimeout(initWebSocket, delay);
+    reconnectTimeout = setTimeout(() => {
+        reconnectTimeout = null;
+        initWebSocket();
+    }, delay);
 }
 
 // Fallback to polling if WebSocket fails
@@ -922,6 +949,10 @@ function hideAllSections() {
 // Online/offline event handlers
 function handleOnline() {
     console.log('App is online');
+    
+    // Reset reconnection attempts when coming back online
+    reconnectAttempts = 0;
+    
     updateConnectionStatus('connecting');
     showToastNotification({
         type: 'success',
@@ -931,7 +962,14 @@ function handleOnline() {
     
     // Refresh all data when coming back online
     refreshAllData();
-    initWebSocket();
+    
+    // Only initialize WebSocket if we don't have an active connection
+    if (!websocket || websocket.readyState === WebSocket.CLOSED || websocket.readyState === WebSocket.CLOSING) {
+        initWebSocket();
+    } else {
+        console.log('WebSocket already connected or connecting');
+        updateConnectionStatus('connected');
+    }
 }
 
 function handleOffline() {
@@ -943,9 +981,15 @@ function handleOffline() {
         message: 'Working with cached data'
     });
     
+    // Clear any pending reconnection attempts
+    if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+    }
+    
     // Close WebSocket if it's open
     if (websocket) {
-        websocket.close();
+        websocket.close(1000, 'Going offline'); // 1000 = normal closure
         websocket = null;
     }
 }
