@@ -2,19 +2,43 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
+
+// WebSocket upgrader
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // Allow all origins for development
+	},
+}
+
+// WebSocketConnection represents a connected WebSocket client
+type WebSocketConnection struct {
+	conn   *websocket.Conn
+	send   chan NotificationMessage
+	mutex  sync.Mutex
+	closed bool
+}
 
 // WebServer represents the HTTP server for giggum PWA integration
 type WebServer struct {
-	port int
+	port           int
+	connections    []*WebSocketConnection
+	connectionsMux sync.RWMutex
 }
 
 // NewWebServer creates a new web server instance
 func NewWebServer(port int) *WebServer {
-	return &WebServer{port: port}
+	return &WebServer{
+		port:        port,
+		connections: make([]*WebSocketConnection, 0),
+	}
 }
 
 // AgentResponse represents the response structure for agent information
@@ -50,6 +74,9 @@ func (ws *WebServer) Start() error {
 	router.StaticFile("/", "./web/index.html")
 	router.StaticFile("/manifest.json", "./web/manifest.json")
 	router.StaticFile("/service-worker.js", "./web/service-worker.js")
+
+	// WebSocket endpoint for real-time notifications
+	router.GET("/ws", ws.handleWebSocket)
 
 	// API routes
 	api := router.Group("/api")
@@ -174,9 +201,160 @@ func (ws *WebServer) sendNotification(c *gin.Context) {
 		notifications = notifications[len(notifications)-50:]
 	}
 
+	log.Println("notifications: ", notification)
+	log.Println(len(notifications))
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":       "notification added",
 		"total_count":  len(notifications),
 		"notification": notification,
 	})
+
+	// Broadcast the new notification to all connected WebSocket clients
+	ws.broadcastNotification(notification)
+}
+
+// handleWebSocket handles WebSocket connections for real-time notifications
+func (ws *WebServer) handleWebSocket(c *gin.Context) {
+	// Upgrade HTTP connection to WebSocket
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade failed: %v", err)
+		return
+	}
+	defer conn.Close()
+
+	// Create new connection
+	wsConn := &WebSocketConnection{
+		conn:   conn,
+		send:   make(chan NotificationMessage, 256),
+		closed: false,
+	}
+
+	// Add connection to the list
+	ws.connectionsMux.Lock()
+	ws.connections = append(ws.connections, wsConn)
+	ws.connectionsMux.Unlock()
+
+	log.Printf("New WebSocket connection established. Total connections: %d", len(ws.connections))
+
+	// Start goroutines for reading and writing
+	go wsConn.writePump()
+	go wsConn.readPump()
+
+	// Send existing notifications to new client
+	go func() {
+		for _, notification := range notifications {
+			select {
+			case wsConn.send <- notification:
+			default:
+				close(wsConn.send)
+				return
+			}
+		}
+	}()
+}
+
+// writePump handles sending messages to WebSocket
+func (wsc *WebSocketConnection) writePump() {
+	ticker := time.NewTicker(54 * time.Second)
+	defer func() {
+		ticker.Stop()
+		wsc.conn.Close()
+	}()
+
+	for {
+		select {
+		case message, ok := <-wsc.send:
+			wsc.mutex.Lock()
+			if wsc.closed {
+				wsc.mutex.Unlock()
+				return
+			}
+			if !ok {
+				wsc.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				wsc.mutex.Unlock()
+				return
+			}
+
+			if err := wsc.conn.WriteJSON(message); err != nil {
+				log.Printf("WebSocket write error: %v", err)
+				wsc.mutex.Unlock()
+				return
+			}
+			wsc.mutex.Unlock()
+
+		case <-ticker.C:
+			wsc.mutex.Lock()
+			if wsc.closed {
+				wsc.mutex.Unlock()
+				return
+			}
+			if err := wsc.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("WebSocket ping error: %v", err)
+				wsc.mutex.Unlock()
+				return
+			}
+			wsc.mutex.Unlock()
+		}
+	}
+}
+
+// readPump handles reading messages from WebSocket
+func (wsc *WebSocketConnection) readPump() {
+	defer func() {
+		wsc.mutex.Lock()
+		wsc.closed = true
+		wsc.mutex.Unlock()
+		wsc.conn.Close()
+	}()
+
+	wsc.conn.SetReadLimit(512)
+	wsc.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	wsc.conn.SetPongHandler(func(string) error {
+		wsc.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
+	for {
+		_, _, err := wsc.conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("WebSocket error: %v", err)
+			}
+			break
+		}
+	}
+}
+
+// broadcastNotification sends a notification to all connected WebSocket clients
+func (ws *WebServer) broadcastNotification(notification NotificationMessage) {
+	ws.connectionsMux.RLock()
+	defer ws.connectionsMux.RUnlock()
+
+	for _, conn := range ws.connections {
+		select {
+		case conn.send <- notification:
+		default:
+			// Can't send, connection is probably closed
+			close(conn.send)
+		}
+	}
+}
+
+// cleanupConnections removes closed connections
+func (ws *WebServer) cleanupConnections() {
+	ws.connectionsMux.Lock()
+	defer ws.connectionsMux.Unlock()
+
+	var activeConnections []*WebSocketConnection
+	for _, conn := range ws.connections {
+		conn.mutex.Lock()
+		if !conn.closed {
+			activeConnections = append(activeConnections, conn)
+		}
+		conn.mutex.Unlock()
+	}
+
+	ws.connections = activeConnections
 }

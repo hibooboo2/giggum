@@ -3,6 +3,9 @@ let agents = [];
 let notifications = [];
 let isLoading = false;
 let notificationInterval = null;
+let websocket = null;
+let reconnectAttempts = 0;
+const maxReconnectAttempts = 5;
 
 // DOM elements
 const loading = document.getElementById('loading');
@@ -15,12 +18,14 @@ const agentCount = document.getElementById('agent-count');
 const errorMessage = document.getElementById('error-message');
 const notificationBadge = document.getElementById('notification-badge');
 const notificationsList = document.getElementById('notifications-list');
+const connectionStatus = document.getElementById('status-indicator');
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
+    updateConnectionStatus('connecting');
     loadAgents();
     loadNotifications();
-    startNotificationPolling();
+    initWebSocket();
 });
 
 // Load agents from API
@@ -238,11 +243,157 @@ function toggleNotifications() {
     }
 }
 
-// Start notification polling
+// Initialize WebSocket connection
+function initWebSocket() {
+    if (!isOnline()) {
+        console.log('App is offline, skipping WebSocket connection');
+        setTimeout(initWebSocket, 5000);
+        return;
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+    try {
+        websocket = new WebSocket(wsUrl);
+
+        websocket.onopen = () => {
+            console.log('WebSocket connection established');
+            reconnectAttempts = 0;
+            updateConnectionStatus('connected');
+        };
+
+        websocket.onmessage = (event) => {
+            try {
+                const notification = JSON.parse(event.data);
+                handleRealTimeNotification(notification);
+            } catch (err) {
+                console.error('Failed to parse WebSocket message:', err);
+            }
+        };
+
+        websocket.onclose = (event) => {
+            console.log('WebSocket connection closed:', event.code, event.reason);
+            websocket = null;
+            updateConnectionStatus('disconnected');
+            attemptReconnect();
+        };
+
+        websocket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+    } catch (err) {
+        console.error('Failed to create WebSocket connection:', err);
+        fallbackToPolling();
+    }
+}
+
+// Handle real-time notification from WebSocket
+function handleRealTimeNotification(notification) {
+    // Add notification to the beginning of the array
+    notifications.unshift(notification);
+    
+    // Keep only last 100 notifications in memory
+    if (notifications.length > 100) {
+        notifications = notifications.slice(0, 100);
+    }
+    
+    updateNotificationBadge();
+    renderNotifications();
+    
+    // Show toast notification for immediate feedback
+    showToastNotification(notification);
+}
+
+// Show toast notification
+function showToastNotification(notification) {
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.innerHTML = `
+        <div class="toast-content">
+            <div class="toast-title">${notification.title}</div>
+            <div class="toast-message">${notification.message}</div>
+        </div>
+        <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+    `;
+    
+    // Add to document
+    document.body.appendChild(toast);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, 5000);
+}
+
+// Attempt to reconnect WebSocket
+function attemptReconnect() {
+    if (reconnectAttempts >= maxReconnectAttempts) {
+        console.log('Max reconnection attempts reached, falling back to polling');
+        fallbackToPolling();
+        return;
+    }
+
+    reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+    
+    console.log(`Attempting to reconnect WebSocket in ${delay}ms (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+    
+    setTimeout(initWebSocket, delay);
+}
+
+// Fallback to polling if WebSocket fails
+function fallbackToPolling() {
+    console.log('Falling back to notification polling');
+    updateConnectionStatus('polling');
+    startNotificationPolling();
+}
+
+// Update connection status indicator
+function updateConnectionStatus(status) {
+    if (!connectionStatus) return;
+    
+    connectionStatus.className = 'status-indicator';
+    
+    switch (status) {
+        case 'connected':
+            connectionStatus.classList.add('connected');
+            connectionStatus.title = 'Connected via WebSocket - Real-time notifications active';
+            break;
+        case 'connecting':
+            connectionStatus.classList.add('connecting');
+            connectionStatus.title = 'Connecting to WebSocket...';
+            break;
+        case 'disconnected':
+            connectionStatus.classList.add('disconnected');
+            connectionStatus.title = 'WebSocket disconnected - Attempting to reconnect';
+            break;
+        case 'polling':
+            connectionStatus.classList.add('polling');
+            connectionStatus.title = 'Polling mode - WebSocket unavailable';
+            break;
+        default:
+            connectionStatus.title = 'Connection status unknown';
+    }
+}
+
+// Initialize connection status
+updateConnectionStatus('connecting');
+
+// Start notification polling (fallback)
 function startNotificationPolling() {
+    // Clear any existing interval
+    if (notificationInterval) {
+        clearInterval(notificationInterval);
+    }
+    
     // Poll for new notifications every 30 seconds
     notificationInterval = setInterval(() => {
-        if (document.hidden) return; // Don't poll when app is hidden
+        if (document.hidden || !isOnline()) return;
         loadNotifications();
     }, 30000);
 }
