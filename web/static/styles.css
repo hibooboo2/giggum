@@ -221,6 +221,10 @@ body {
     color: #64748b;
 }
 
+.status-indicator.offline {
+    color: #8b5cf6;
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }

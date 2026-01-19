@@ -33,9 +33,26 @@ const connectionStatus = document.getElementById('status-indicator');
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     updateConnectionStatus('connecting');
-    loadAgents();
-    loadNotifications();
-    initWebSocket();
+    
+    // Check if we're online or offline and load data accordingly
+    if (isOnline()) {
+        loadAgents();
+        loadNotifications();
+        initWebSocket();
+    } else {
+        loadAgentsFromCache();
+        loadNotificationsFromCache();
+        updateConnectionStatus('offline');
+        showToastNotification({
+            type: 'info',
+            title: 'Offline Mode',
+            message: 'Working in offline mode with cached data'
+        });
+    }
+    
+    // Listen for online/offline events
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 });
 
 // Load agents from API
@@ -46,7 +63,9 @@ async function loadAgents() {
     showLoading();
     
     try {
-        const response = await fetch('/api/agents');
+        const response = await fetch('/api/agents', { 
+            headers: { 'Cache-Control': 'no-cache' }
+        });
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -55,7 +74,7 @@ async function loadAgents() {
         const data = await response.json();
         agents = data.agents || [];
         
-        if (agents.length === 0) {
+        if (agents.length === 0 && !data.offline) {
             showError('No agents found');
             return;
         }
@@ -64,9 +83,41 @@ async function loadAgents() {
         
     } catch (err) {
         console.error('Failed to load agents:', err);
-        showError(`Failed to load agents: ${err.message}`);
+        // Try to load from cache if network fails
+        await loadAgentsFromCache();
     } finally {
         isLoading = false;
+    }
+}
+
+// Load agents from cache when offline
+async function loadAgentsFromCache() {
+    try {
+        const response = await fetch('/api/agents');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.offline) {
+            console.log('Working in offline mode with cached agents');
+            updateConnectionStatus('offline');
+        }
+        
+        agents = data.agents || [];
+        
+        if (agents.length === 0) {
+            showError('No cached agents available. Connect to internet to load data.');
+            return;
+        }
+        
+        showAgents(agents);
+        
+    } catch (err) {
+        console.error('Failed to load agents from cache:', err);
+        showError('No cached agents available. Connect to internet to load data.');
     }
 }
 
@@ -165,7 +216,9 @@ async function loadSessions() {
     showLoading();
     
     try {
-        const response = await fetch('/api/sessions');
+        const response = await fetch('/api/sessions', { 
+            headers: { 'Cache-Control': 'no-cache' }
+        });
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -174,16 +227,36 @@ async function loadSessions() {
         const data = await response.json();
         sessions = data.sessions || [];
         
-        if (sessions.length === 0) {
+        if (sessions.length === 0 && !data.offline) {
             showError('No sessions found');
             return;
+        }
+        
+        if (data.offline) {
+            console.log('Working in offline mode with cached sessions');
+            updateConnectionStatus('offline');
         }
         
         displaySessions(sessions);
         
     } catch (err) {
         console.error('Failed to load sessions:', err);
-        showError(`Failed to load sessions: ${err.message}`);
+        // Try cache fallback
+        try {
+            const cacheResponse = await fetch('/api/sessions');
+            const data = await cacheResponse.json();
+            sessions = data.sessions || [];
+            
+            if (sessions.length === 0) {
+                showError('No cached sessions available. Connect to internet to load data.');
+                return;
+            }
+            
+            updateConnectionStatus('offline');
+            displaySessions(sessions);
+        } catch (cacheErr) {
+            showError(`Failed to load sessions: ${err.message}`);
+        }
     } finally {
         isLoading = false;
     }
@@ -241,7 +314,9 @@ function createGlobalSessionItem(session) {
 // Load notifications from API
 async function loadNotifications() {
     try {
-        const response = await fetch('/api/notifications');
+        const response = await fetch('/api/notifications', { 
+            headers: { 'Cache-Control': 'no-cache' }
+        });
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -255,6 +330,31 @@ async function loadNotifications() {
         
     } catch (err) {
         console.error('Failed to load notifications:', err);
+        await loadNotificationsFromCache();
+    }
+}
+
+// Load notifications from cache when offline
+async function loadNotificationsFromCache() {
+    try {
+        const response = await fetch('/api/notifications');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.offline) {
+            console.log('Working in offline mode with cached notifications');
+        }
+        
+        notifications = data.notifications || [];
+        updateNotificationBadge();
+        renderNotifications();
+        
+    } catch (err) {
+        console.error('Failed to load notifications from cache:', err);
     }
 }
 
@@ -446,30 +546,43 @@ function fallbackToPolling() {
 
 // Update connection status indicator
 function updateConnectionStatus(status) {
-    if (!connectionStatus) return;
+    // Update all connection status indicators
+    const indicators = [
+        document.getElementById('status-indicator'),
+        document.getElementById('status-indicator-projects'),
+        document.getElementById('status-indicator-sessions')
+    ];
     
-    connectionStatus.className = 'status-indicator';
-    
-    switch (status) {
-        case 'connected':
-            connectionStatus.classList.add('connected');
-            connectionStatus.title = 'Connected via WebSocket - Real-time notifications active';
-            break;
-        case 'connecting':
-            connectionStatus.classList.add('connecting');
-            connectionStatus.title = 'Connecting to WebSocket...';
-            break;
-        case 'disconnected':
-            connectionStatus.classList.add('disconnected');
-            connectionStatus.title = 'WebSocket disconnected - Attempting to reconnect';
-            break;
-        case 'polling':
-            connectionStatus.classList.add('polling');
-            connectionStatus.title = 'Polling mode - WebSocket unavailable';
-            break;
-        default:
-            connectionStatus.title = 'Connection status unknown';
-    }
+    indicators.forEach(indicator => {
+        if (!indicator) return;
+        
+        indicator.className = 'status-indicator';
+        
+        switch (status) {
+            case 'connected':
+                indicator.classList.add('connected');
+                indicator.title = 'Connected via WebSocket - Real-time notifications active';
+                break;
+            case 'connecting':
+                indicator.classList.add('connecting');
+                indicator.title = 'Connecting to WebSocket...';
+                break;
+            case 'disconnected':
+                indicator.classList.add('disconnected');
+                indicator.title = 'WebSocket disconnected - Attempting to reconnect';
+                break;
+            case 'polling':
+                indicator.classList.add('polling');
+                indicator.title = 'Polling mode - WebSocket unavailable';
+                break;
+            case 'offline':
+                indicator.classList.add('offline');
+                indicator.title = 'Offline mode - Using cached data';
+                break;
+            default:
+                indicator.title = 'Connection status unknown';
+        }
+    });
 }
 
 // Initialize connection status
@@ -497,7 +610,9 @@ async function showProjectsView() {
     showLoading();
     
     try {
-        const response = await fetch('/api/projects');
+        const response = await fetch('/api/projects', { 
+            headers: { 'Cache-Control': 'no-cache' }
+        });
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -506,16 +621,36 @@ async function showProjectsView() {
         const data = await response.json();
         projects = data.projects || [];
         
-        if (projects.length === 0) {
+        if (projects.length === 0 && !data.offline) {
             showError('No projects found');
             return;
+        }
+        
+        if (data.offline) {
+            console.log('Working in offline mode with cached projects');
+            updateConnectionStatus('offline');
         }
         
         displayProjects(projects);
         
     } catch (err) {
         console.error('Failed to load projects:', err);
-        showError(`Failed to load projects: ${err.message}`);
+        // Try cache fallback
+        try {
+            const cacheResponse = await fetch('/api/projects');
+            const data = await cacheResponse.json();
+            projects = data.projects || [];
+            
+            if (projects.length === 0) {
+                showError('No cached projects available. Connect to internet to load data.');
+                return;
+            }
+            
+            updateConnectionStatus('offline');
+            displayProjects(projects);
+        } catch (cacheErr) {
+            showError(`Failed to load projects: ${err.message}`);
+        }
     } finally {
         isLoading = false;
     }
@@ -784,20 +919,65 @@ function hideAllSections() {
     // Don't hide notifications panel here as it should be toggleable
 }
 
-// Online/offline detection
-window.addEventListener('online', () => {
+// Online/offline event handlers
+function handleOnline() {
     console.log('App is online');
-    // Could add a toast notification here
-});
+    updateConnectionStatus('connecting');
+    showToastNotification({
+        type: 'success',
+        title: 'Back Online',
+        message: 'Connection restored - refreshing data'
+    });
+    
+    // Refresh all data when coming back online
+    refreshAllData();
+    initWebSocket();
+}
 
-window.addEventListener('offline', () => {
+function handleOffline() {
     console.log('App is offline');
-    // Could add a toast notification here
-});
+    updateConnectionStatus('offline');
+    showToastNotification({
+        type: 'info',
+        title: 'Offline Mode',
+        message: 'Working with cached data'
+    });
+    
+    // Close WebSocket if it's open
+    if (websocket) {
+        websocket.close();
+        websocket = null;
+    }
+}
+
+// Online/offline detection
+window.addEventListener('online', handleOnline);
+window.addEventListener('offline', handleOffline);
 
 // Check connection status
 function isOnline() {
     return navigator.onLine;
+}
+
+// Refresh all data when coming back online
+async function refreshAllData() {
+    try {
+        // Refresh all main data sources
+        await Promise.all([
+            loadAgents(),
+            loadNotifications()
+        ]);
+        
+        // If we're currently viewing projects or sessions, refresh those too
+        if (projectsSection.style.display !== 'none') {
+            await showProjectsView();
+        } else if (sessionsSection.style.display !== 'none') {
+            await loadSessions();
+        }
+        
+    } catch (err) {
+        console.error('Failed to refresh data:', err);
+    }
 }
 
 // Pull-to-refresh functionality
@@ -822,7 +1002,7 @@ document.addEventListener('touchmove', (e) => {
     }
 });
 
-document.addEventListener('touchend', () => {
+document.addEventListener('touchend', (e) => {
     if (!isPulling) return;
     
     isPulling = false;
@@ -831,7 +1011,15 @@ document.addEventListener('touchend', () => {
     // If pulled down enough, refresh
     const diff = e.changedTouches[0].pageY - startY;
     if (diff > 100) {
-        loadAgents();
+        if (isOnline()) {
+            refreshAllData();
+        } else {
+            showToastNotification({
+                type: 'info',
+                title: 'Offline',
+                message: 'Cannot refresh while offline'
+            });
+        }
     }
 });
 
