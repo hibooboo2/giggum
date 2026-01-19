@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -9,6 +10,51 @@ import (
 	"strings"
 	"time"
 )
+
+// Config holds the configuration for the Ralph Wiggum loop
+type Config struct {
+	PromptCommand string `json:"prompt_command"`
+	// Future configuration options can be added here
+}
+
+// DefaultPromptCommand is the default prompt command if not specified in config
+const DefaultPromptCommand = "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md"
+
+// loadConfig loads configuration from config.json file, returns default config if file doesn't exist
+func loadConfig(verbose bool) (*Config, error) {
+	configFile := "config.json"
+
+	// Check if config file exists
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		if verbose {
+			fmt.Printf("Config file '%s' not found, using default configuration\n", configFile)
+		}
+		return &Config{PromptCommand: DefaultPromptCommand}, nil
+	}
+
+	// Read config file
+	content, err := os.ReadFile(configFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file '%s': %v", configFile, err)
+	}
+
+	// Parse JSON
+	var config Config
+	if err := json.Unmarshal(content, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file '%s': %v", configFile, err)
+	}
+
+	// Use default prompt command if not specified
+	if config.PromptCommand == "" {
+		config.PromptCommand = DefaultPromptCommand
+	}
+
+	if verbose {
+		fmt.Printf("✓ Loaded configuration from '%s'\n", configFile)
+	}
+
+	return &config, nil
+}
 
 func main() {
 	// Define command line flags
@@ -49,6 +95,13 @@ func main() {
 		}
 	}
 
+	// Load configuration
+	config, err := loadConfig(verbose)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Configuration loading failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Enhanced feedback loop validation
 	if err := validateFeedbackLoops(verbose); err != nil {
 		fmt.Fprintf(os.Stderr, "Feedback loop validation failed: %v\n", err)
@@ -73,9 +126,12 @@ func main() {
 		if verbose {
 			args = append(args, "--print-logs")
 		}
-		args = append(args, "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md")
+		args = append(args, config.PromptCommand)
 
 		cmd := exec.Command("opencode", args...)
+
+		// Inherit environment variables from current process
+		cmd.Env = os.Environ()
 
 		// Capture output
 		output, err := cmd.CombinedOutput()
@@ -280,6 +336,14 @@ DESCRIPTION:
     The loop continues until all tasks are complete or the specified number 
     of iterations is reached.
 
+CONFIGURATION:
+    The program looks for a config.json file for customization. If not found,
+    default settings are used. The config file can contain:
+    
+    {
+        "prompt_command": "your custom prompt here"
+    }
+
 BACKUP/RESTORE:
     The -backup flag creates a timestamped backup of progress.txt in the 
     'backups/' directory before starting the loop. The -restore flag restores
@@ -289,6 +353,7 @@ FILES REQUIRED:
     - tasks.md     Task definitions and priorities
     - progress.txt Progress tracking
     - prompt.md    AI execution prompt
+    - config.json  Optional configuration file
 
 EXAMPLES:
     ralph           # Run 10 iterations
