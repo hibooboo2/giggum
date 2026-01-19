@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // processWebhookResponse processes a webhook response by sending it to opencode to create a task list
@@ -150,20 +151,15 @@ func sendWebhookNotification(logger *Logger, config Config, iterations int, comp
 	}
 
 	// Prepare webhook payload
-	// payload := map[string]interface{}{
-	// 	"timestamp":      time.Now().UTC().Format(time.RFC3339),
-	// 	"iterations":     iterations,
-	// 	"completed":      completed,
-	// 	"message":        "Ralph Wiggum execution completed",
-	// 	"reply_endpoint": "http://localhost:8080/reply",
-	// }
+	payload := map[string]interface{}{
+		"timestamp":      time.Now().UTC().Format(time.RFC3339),
+		"iterations":     iterations,
+		"completed":      completed,
+		"message":        "Ralph Wiggum execution completed",
+		"reply_endpoint": "http://localhost:8080/reply",
+	}
 
-	jsonPayload, err := json.Marshal(NotificationMessage{
-		Type:    string(config.AgentType),
-		Title:   "Giggum done",
-		Message: "Agent finished tasks",
-		Status:  "Done",
-	})
+	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal webhook payload: %v", err)
 	}

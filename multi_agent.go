@@ -420,8 +420,6 @@ func showHelp() {
     -multi-agent    Run coordinated multi-agent session
     -list-agents    List all available agent types and their descriptions
     -show-progress  Show agent progress for current project
-    -web-server     Start web server for PWA integration
-    -web-port PORT  Port for web server (default: 8080)
 
  EXAMPLES:
     ralph           # Run 10 iterations with default backend-developer agent
@@ -432,8 +430,6 @@ func showHelp() {
     ralph -multi-agent   # Run coordinated multi-agent session
     ralph -show-progress # Show agent progress
     ralph -list-agents  # Show all available agent types
-    ralph -web-server    # Start web server for PWA on http://localhost:8080
-    ralph -web-port 3000 -web-server  # Start web server on port 3000
     ralph -h        # Show this help
 
  REQUIRED FILES:

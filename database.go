@@ -16,8 +16,19 @@ type DBManager struct {
 	db *sql.DB
 }
 
-// NewDBManager creates a new database manager
+// NewDBManager creates a new database manager (backward compatibility)
 func NewDBManager(dbPath string) (*DBManager, error) {
+	// For backward compatibility, create a basic DBManager
+	return createBasicDBManager(dbPath)
+}
+
+// NewPooledDBManagerWrapper creates a pooled database manager (new recommended approach)
+func NewPooledDBManagerWrapper(dbPath string) (*PooledDBManager, error) {
+	return CreateDefaultPooledDBManager(dbPath)
+}
+
+// createBasicDBManager creates the original simple DBManager
+func createBasicDBManager(dbPath string) (*DBManager, error) {
 	// Ensure the directory exists
 	dir := filepath.Dir(dbPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
