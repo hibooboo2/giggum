@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"sort"
 	"strings"
@@ -181,23 +180,6 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 	}
 
 	return nil
-}
-
-// parseTasks extracts tasks from tasks.md content
-func parseTasks(content string) []string {
-	var tasks []string
-	lines := strings.Split(content, "</section>")
-	log.Println(len(lines))
-
-	for _, line := range lines {
-		line = strings.ReplaceAll(line, "<section", "")
-		line = strings.TrimSpace(line)
-		if line != "" {
-			tasks = append(tasks, line)
-		}
-	}
-
-	return tasks
 }
 
 // selectBestAgentForTask determines which agent type is best suited for a task

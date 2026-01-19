@@ -1,0 +1,638 @@
+package main
+
+import (
+	"bufio"
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+)
+
+func handleTaskCommand(command string) error {
+	switch command {
+	case "list":
+		return displayTaskList(taskManager)
+	case "create":
+		return createTaskInteractively(taskManager)
+	case "add":
+		return addTaskFromRawString(taskManager)
+	case "remove":
+		return removeTaskInteractively(taskManager)
+	case "set":
+		return setTaskProperties(taskManager)
+	case "stats":
+		return displayTaskStats(taskManager)
+	default:
+		return fmt.Errorf("unknown task command: %s. Available: list, create, add, remove, set, stats, import", command)
+	}
+}
+
+func addTaskFromRawString(taskManager *TaskManager) error {
+	// Get the raw task string from command line arguments
+	if flag.NArg() < 1 {
+		return fmt.Errorf("task add requires a task string. Usage: giggum -task add \"your task description\"")
+	}
+
+	rawTask := strings.Join(flag.Args(), " ")
+	if strings.TrimSpace(rawTask) == "" {
+		return fmt.Errorf("task string cannot be empty")
+	}
+
+	fmt.Printf("🤖 Analyzing task with researcher agent...\n")
+	fmt.Printf("📝 Raw input: %s\n\n", rawTask)
+
+	// Create a logger for the researcher agent
+	logger, err := NewLogger("INFO", false, "")
+	if err != nil {
+		return fmt.Errorf("failed to create logger: %v", err)
+	}
+	defer logger.Close()
+
+	// Prepare researcher prompt
+	researcherPrompt := fmt.Sprintf(`As a thorough Researcher with expertise in technical investigation, requirement analysis, and solution exploration, analyze this task and provide structured metadata:
+
+TASK TO ANALYZE: %s
+
+Please analyze this task and provide a structured response with the following format:
+
+TITLE: [Clear, concise title for the task]
+DESCRIPTION: [Detailed description of what needs to be done]
+STATUS: [pending/in_progress/completed based on current state]
+PRIORITY: [high/medium/low based on urgency and importance]
+TAGS: [comma-separated relevant tags like "frontend", "backend", "database", "ui", "api", etc.]
+METADATA: [JSON object with additional context like complexity, estimated_time, dependencies, etc.]
+
+Focus on:
+1. Breaking down the task into clear requirements
+2. Identifying the technical domain and scope
+3. Assessing priority based on business impact and urgency
+4. Extracting relevant tags for categorization
+5. Providing metadata that helps with task management
+
+Provide only the structured response, no additional explanation.`, rawTask)
+
+	fmt.Printf("🔍 Researching task requirements...\n")
+	researcherOutput, err := runAgentWithOutput(logger, Researcher, researcherPrompt, false, 30)
+	if err != nil {
+		fmt.Printf("⚠️  Researcher agent analysis failed, proceeding with basic analysis: %v\n", err)
+		// Continue with basic analysis even if researcher fails
+
+		// Extract basic info from the raw task for now
+		lines := strings.Split(rawTask, ".")
+		title := lines[0]
+		if len(title) > 100 {
+			title = title[:97] + "..."
+		}
+		description := rawTask
+
+		// Basic heuristics for priority
+		priority := "medium"
+		lowerTask := strings.ToLower(rawTask)
+		if strings.Contains(lowerTask, "urgent") || strings.Contains(lowerTask, "critical") || strings.Contains(lowerTask, "asap") {
+			priority = "high"
+		} else if strings.Contains(lowerTask, "later") || strings.Contains(lowerTask, "when") || strings.Contains(lowerTask, "eventually") {
+			priority = "low"
+		}
+
+		// Basic heuristics for tags
+		tags := ""
+		if strings.Contains(lowerTask, "database") || strings.Contains(lowerTask, "db") || strings.Contains(lowerTask, "sql") {
+			tags = "database"
+		} else if strings.Contains(lowerTask, "frontend") || strings.Contains(lowerTask, "ui") || strings.Contains(lowerTask, "interface") {
+			tags = "frontend"
+		} else if strings.Contains(lowerTask, "backend") || strings.Contains(lowerTask, "api") || strings.Contains(lowerTask, "server") {
+			tags = "backend"
+		} else if strings.Contains(lowerTask, "test") || strings.Contains(lowerTask, "testing") {
+			tags = "testing"
+		}
+
+		// Create the task with basic analysis
+		task, err := taskManager.CreateTaskWithStatus(title, description, priority, "pending")
+		if err != nil {
+			return fmt.Errorf("failed to create task: %v", err)
+		}
+
+		// Update tags and metadata if provided
+		metadata := fmt.Sprintf(`{"source": "task_add_command", "raw_input": "%s", "analysis_date": "%s"}`,
+			strings.ReplaceAll(rawTask, "\"", "'"),
+			time.Now().Format("2006-01-02T15:04:05Z"))
+
+		if tags != "" || metadata != "" {
+			if err := taskManager.UpdateTaskMetadata(task.ID, tags, metadata); err != nil {
+				fmt.Printf("Warning: failed to save tags/metadata: %v\n", err)
+			} else {
+				// Refresh the task to get updated values
+				task, _ = taskManager.GetTask(task.ID)
+			}
+		}
+
+		// Display the created task
+		fmt.Printf("\n✅ Task created successfully!\n")
+		fmt.Printf("📋 ID: %d\n", task.ID)
+		fmt.Printf("📝 Title: %s\n", task.Title)
+		if task.Description != "" {
+			fmt.Printf("📄 Description: %s\n", task.Description)
+		}
+		fmt.Printf("🎯 Priority: %s\n", task.Priority)
+		fmt.Printf("📅 Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("📊 Status: %s\n", task.Status)
+		if task.Tags != "" {
+			fmt.Printf("🏷️  Tags: %s\n", task.Tags)
+		}
+
+		return nil
+	}
+
+	// Parse the researcher's output
+	title, description, status, priority, tags, researcherMetadata := parseResearcherOutput(researcherOutput)
+
+	// Use researcher's analysis, fall back to defaults if empty
+	if title == "" {
+		lines := strings.Split(rawTask, ".")
+		title = lines[0]
+		if len(title) > 100 {
+			title = title[:97] + "..."
+		}
+	}
+	if description == "" {
+		description = rawTask
+	}
+	if status == "" {
+		status = "pending"
+		// For new tasks created by user, default to pending unless researcher suggests otherwise
+	}
+	if priority == "" {
+		priority = "medium"
+		// Apply basic heuristics if researcher didn't provide priority
+		lowerTask := strings.ToLower(rawTask)
+		if strings.Contains(lowerTask, "urgent") || strings.Contains(lowerTask, "critical") || strings.Contains(lowerTask, "asap") {
+			priority = "high"
+		} else if strings.Contains(lowerTask, "later") || strings.Contains(lowerTask, "when") || strings.Contains(lowerTask, "eventually") {
+			priority = "low"
+		}
+	}
+	if tags == "" {
+		// Apply basic heuristics if researcher didn't provide tags
+		lowerTask := strings.ToLower(rawTask)
+		if strings.Contains(lowerTask, "database") || strings.Contains(lowerTask, "db") || strings.Contains(lowerTask, "sql") {
+			tags = "database"
+		} else if strings.Contains(lowerTask, "frontend") || strings.Contains(lowerTask, "ui") || strings.Contains(lowerTask, "interface") {
+			tags = "frontend"
+		} else if strings.Contains(lowerTask, "backend") || strings.Contains(lowerTask, "api") || strings.Contains(lowerTask, "server") {
+			tags = "backend"
+		} else if strings.Contains(lowerTask, "test") || strings.Contains(lowerTask, "testing") {
+			tags = "testing"
+		}
+	}
+
+	// Create the task
+	task, err := taskManager.CreateTaskWithStatus(title, description, priority, status)
+	if err != nil {
+		return fmt.Errorf("failed to create task: %v", err)
+	}
+
+	// Update tags and metadata if provided
+	baseMetadata := fmt.Sprintf(`{"source": "task_add_command", "raw_input": "%s", "analysis_date": "%s"}`,
+		strings.ReplaceAll(rawTask, "\"", "'"),
+		time.Now().Format("2006-01-02T15:04:05Z"))
+
+	// Combine with researcher metadata if available
+	metadata := baseMetadata
+	if researcherMetadata != "" {
+		metadata = fmt.Sprintf(`%s, "researcher_analysis": %s`, strings.TrimSuffix(baseMetadata, "}"), researcherMetadata)
+	}
+
+	if tags != "" || metadata != "" {
+		if err := taskManager.UpdateTaskMetadata(task.ID, tags, metadata); err != nil {
+			fmt.Printf("Warning: failed to save tags/metadata: %v\n", err)
+		} else {
+			// Refresh the task to get updated values
+			task, _ = taskManager.GetTask(task.ID)
+		}
+	}
+
+	// Display the created task
+	fmt.Printf("\n✅ Task created successfully!\n")
+	fmt.Printf("📋 ID: %d\n", task.ID)
+	fmt.Printf("📝 Title: %s\n", task.Title)
+	if task.Description != "" {
+		fmt.Printf("📄 Description: %s\n", task.Description)
+	}
+	fmt.Printf("🎯 Priority: %s\n", task.Priority)
+	fmt.Printf("📅 Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("📊 Status: %s\n", task.Status)
+	if task.Tags != "" {
+		fmt.Printf("🏷️  Tags: %s\n", task.Tags)
+	}
+
+	return nil
+}
+
+func displayTaskList(taskManager *TaskManager) error {
+	tasks, err := taskManager.GetAllTasks()
+	if err != nil {
+		return fmt.Errorf("failed to get tasks: %v", err)
+	}
+
+	if len(tasks) == 0 {
+		fmt.Println("No tasks found. You can create tasks by editing tasks.md or using the import command.")
+		return nil
+	}
+
+	// Group tasks by status
+	statusGroups := make(map[string][]Task)
+	for _, task := range tasks {
+		statusGroups[task.Status] = append(statusGroups[task.Status], task)
+	}
+
+	// Display in order: pending, in_progress, completed, cancelled
+	statusOrder := []string{"pending", "in_progress", "completed", "cancelled"}
+	statusIcons := map[string]string{
+		"pending":     "⏳",
+		"in_progress": "🔄",
+		"completed":   "✅",
+		"cancelled":   "❌",
+	}
+	statusNames := map[string]string{
+		"pending":     "Pending",
+		"in_progress": "In Progress",
+		"completed":   "Completed",
+		"cancelled":   "Cancelled",
+	}
+
+	for _, status := range statusOrder {
+		if tasks, exists := statusGroups[status]; exists && len(tasks) > 0 {
+			fmt.Printf("\n%s %s (%d)\n", statusIcons[status], statusNames[status], len(tasks))
+			fmt.Println(strings.Repeat("─", 50))
+
+			for _, task := range tasks {
+				priorityIcon := getPriorityIcon(task.Priority)
+				fmt.Printf("%s [%d] %s\n", priorityIcon, task.ID, task.Title)
+
+				if task.Description != "" && task.Description != task.Title {
+					fmt.Printf("     %s\n", task.Description)
+				}
+
+				fmt.Printf("     Created: %s", task.CreatedAt.Format("2006-01-02 15:04"))
+				if task.CompletedAt != nil {
+					fmt.Printf(" | Completed: %s", task.CompletedAt.Format("2006-01-02 15:04"))
+				}
+				fmt.Println()
+
+				if task.Tags != "" {
+					fmt.Printf("     Tags: %s\n", task.Tags)
+				}
+				fmt.Println()
+			}
+		}
+	}
+
+	// Show summary
+	stats, err := taskManager.GetTaskStats()
+	if err == nil {
+		fmt.Printf("\n📊 Summary: %d total tasks", stats["total"])
+		if stats["pending"] > 0 {
+			fmt.Printf(" | %d pending", stats["pending"])
+		}
+		if stats["in_progress"] > 0 {
+			fmt.Printf(" | %d in progress", stats["in_progress"])
+		}
+		if stats["completed"] > 0 {
+			fmt.Printf(" | %d completed", stats["completed"])
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+func displayTaskStats(taskManager *TaskManager) error {
+	stats, err := taskManager.GetTaskStats()
+	if err != nil {
+		return fmt.Errorf("failed to get task stats: %v", err)
+	}
+
+	fmt.Println("📊 Task Statistics")
+	fmt.Println(strings.Repeat("═", 30))
+
+	if stats["total"] == 0 {
+		fmt.Println("No tasks found.")
+		return nil
+	}
+
+	fmt.Printf("Total Tasks: %d\n\n", stats["total"])
+
+	fmt.Println("By Status:")
+	for status, count := range stats {
+		if status != "total" {
+			icon := statusIcons[status]
+			name := statusNames[status]
+			fmt.Printf("  %s %s: %d\n", icon, name, count)
+		}
+	}
+
+	// Get all tasks to show priority breakdown
+	tasks, err := taskManager.GetAllTasks()
+	if err == nil {
+		priorityCount := make(map[string]int)
+		for _, task := range tasks {
+			priorityCount[task.Priority]++
+		}
+
+		fmt.Println("\nBy Priority:")
+		for priority, count := range priorityCount {
+			icon := getPriorityIcon(priority)
+			fmt.Printf("  %s %s: %d\n", icon, strings.Title(priority), count)
+		}
+	}
+
+	return nil
+}
+
+func createTaskInteractively(taskManager *TaskManager) error {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("📝 Create New Task")
+	fmt.Println("=================")
+
+	// Get task title
+	fmt.Print("Task title: ")
+	title, err := reader.ReadString('\n')
+	if err != nil {
+		return fmt.Errorf("failed to read title: %v", err)
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("task title cannot be empty")
+	}
+
+	// Get task description
+	fmt.Print("Task description (optional): ")
+	description, _ := reader.ReadString('\n')
+	description = strings.TrimSpace(description)
+
+	// Get priority
+	fmt.Print("Priority (high/medium/low) [medium]: ")
+	priorityInput, _ := reader.ReadString('\n')
+	priority := strings.ToLower(strings.TrimSpace(priorityInput))
+	if priority == "" {
+		priority = "medium"
+	}
+	if priority != "high" && priority != "medium" && priority != "low" {
+		fmt.Printf("Invalid priority '%s', using 'medium'\n", priority)
+		priority = "medium"
+	}
+
+	// Get tags
+	fmt.Print("Tags (comma-separated, optional): ")
+	tagsInput, _ := reader.ReadString('\n')
+	tags := strings.TrimSpace(tagsInput)
+
+	// Get metadata
+	fmt.Print("Additional metadata (optional): ")
+	metadataInput, _ := reader.ReadString('\n')
+	metadata := strings.TrimSpace(metadataInput)
+
+	// Create the task
+	task, err := taskManager.CreateTask(title, description, priority)
+	if err != nil {
+		return fmt.Errorf("failed to create task: %v", err)
+	}
+
+	// Update tags and metadata if provided
+	if tags != "" || metadata != "" {
+		if err := taskManager.UpdateTaskMetadata(task.ID, tags, metadata); err != nil {
+			fmt.Printf("Warning: failed to save tags/metadata: %v\n", err)
+		} else {
+			// Refresh the task to get updated values
+			task, _ = taskManager.GetTask(task.ID)
+		}
+	}
+
+	// Display the created task
+	fmt.Printf("\n✅ Task created successfully!\n")
+	fmt.Printf("📋 ID: %d\n", task.ID)
+	fmt.Printf("📝 Title: %s\n", task.Title)
+	if task.Description != "" {
+		fmt.Printf("📄 Description: %s\n", task.Description)
+	}
+	fmt.Printf("🎯 Priority: %s\n", task.Priority)
+	fmt.Printf("📅 Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("📊 Status: %s\n", task.Status)
+
+	return nil
+}
+
+func removeTaskInteractively(taskManager *TaskManager) error {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Println("🗑️  Remove Task")
+	fmt.Println("================")
+
+	// Show current tasks first
+	tasks, err := taskManager.GetAllTasks()
+	if err != nil {
+		return fmt.Errorf("failed to get tasks: %v", err)
+	}
+
+	if len(tasks) == 0 {
+		fmt.Println("No tasks found to remove.")
+		return nil
+	}
+
+	// Display tasks for selection
+	fmt.Println("\nCurrent tasks:")
+	fmt.Println(strings.Repeat("─", 50))
+	for _, task := range tasks {
+		priorityIcon := getPriorityIcon(task.Priority)
+		statusIcon := statusIcons[task.Status]
+		fmt.Printf("%s %s [%d] %s\n", priorityIcon, statusIcon, task.ID, task.Title)
+		if task.Description != "" && task.Description != task.Title {
+			fmt.Printf("     %s\n", task.Description)
+		}
+		fmt.Printf("     Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04"))
+		fmt.Println()
+	}
+
+	// Get task ID to remove
+	for {
+		fmt.Print("Enter task ID to remove (or 'q' to cancel): ")
+		input, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read input: %v", err)
+		}
+		input = strings.TrimSpace(input)
+
+		if input == "q" || input == "quit" || input == "exit" {
+			fmt.Println("Task removal cancelled.")
+			return nil
+		}
+
+		var taskID int64
+		if _, err := fmt.Sscanf(input, "%d", &taskID); err != nil {
+			fmt.Printf("Invalid task ID. Please enter a number or 'q' to cancel.\n")
+			continue
+		}
+
+		// Verify task exists
+		task, err := taskManager.GetTask(taskID)
+		if err != nil {
+			fmt.Printf("Task with ID %d not found. Please try again.\n", taskID)
+			continue
+		}
+
+		// Show task details and confirm
+		fmt.Printf("\nTask to remove:\n")
+		priorityIcon := getPriorityIcon(task.Priority)
+		statusIcon := statusIcons[task.Status]
+		fmt.Printf("%s %s [%d] %s\n", priorityIcon, statusIcon, task.ID, task.Title)
+		if task.Description != "" && task.Description != task.Title {
+			fmt.Printf("Description: %s\n", task.Description)
+		}
+		fmt.Printf("Status: %s | Priority: %s\n", task.Status, task.Priority)
+		fmt.Printf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+
+		// Confirmation
+		fmt.Printf("\nAre you sure you want to remove this task? (y/N): ")
+		confirm, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read confirmation: %v", err)
+		}
+		confirm = strings.ToLower(strings.TrimSpace(confirm))
+
+		if confirm == "y" || confirm == "yes" {
+			// Delete the task
+			if err := taskManager.DeleteTask(taskID); err != nil {
+				return fmt.Errorf("failed to remove task: %v", err)
+			}
+			fmt.Printf("✅ Task [%d] removed successfully.\n", taskID)
+			return nil
+		} else {
+			fmt.Printf("Task removal cancelled.\n")
+			return nil
+		}
+	}
+}
+
+func setTaskProperties(taskManager *TaskManager) error {
+	// Parse command line arguments using flag.Args() which gives all args after flags
+	args := flag.Args()
+
+	// If no arguments provided, show usage
+	if len(args) < 3 {
+		return fmt.Errorf("usage: giggum -task set <task_id> <property> <value> OR giggum -task set <task_id> <property1>=<value1> <property2>=<value2>...")
+	}
+
+	// Parse task ID (first argument after "set")
+	var taskID int64
+	if _, err := fmt.Sscanf(args[0], "%d", &taskID); err != nil {
+		return fmt.Errorf("invalid task ID: %s", args[0])
+	}
+
+	// Verify task exists
+	task, err := taskManager.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("task not found: %d", taskID)
+	}
+
+	// Show current task details
+	fmt.Printf("📝 Current Task [%d]:\n", task.ID)
+	priorityIcon := getPriorityIcon(task.Priority)
+	statusIcon := statusIcons[task.Status]
+	fmt.Printf("%s %s %s\n", priorityIcon, statusIcon, task.Title)
+	if task.Description != "" && task.Description != task.Title {
+		fmt.Printf("Description: %s\n", task.Description)
+	}
+	fmt.Printf("Status: %s | Priority: %s\n", task.Status, task.Priority)
+	if task.Tags != "" {
+		fmt.Printf("Tags: %s\n", task.Tags)
+	}
+	fmt.Printf("Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Println()
+
+	// Parse updates
+	updates := make(map[string]string)
+
+	// Check if we have property=value format (multiple properties)
+	if len(args) >= 2 && strings.Contains(args[1], "=") {
+		// Multiple properties format: task set <id> status=completed priority=high
+		for i := 1; i < len(args); i++ {
+			parts := strings.SplitN(args[i], "=", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("invalid property format: %s. Expected format: property=value", args[i])
+			}
+			property := strings.ToLower(strings.TrimSpace(parts[0]))
+			value := strings.TrimSpace(parts[1])
+
+			// Map common aliases to standard field names
+			switch property {
+			case "stat":
+				property = "status"
+			case "prio":
+				property = "priority"
+			case "tag":
+				property = "tags"
+			case "meta":
+				property = "metadata"
+			case "desc":
+				property = "description"
+			}
+
+			updates[property] = value
+		}
+	} else {
+		// Single property format: task set <id> <property> <value>
+		if len(args) != 3 {
+			return fmt.Errorf("usage: giggum -task set <task_id> <property> <value>")
+		}
+
+		property := strings.ToLower(strings.TrimSpace(args[1]))
+		value := strings.TrimSpace(args[2])
+
+		// Map common aliases to standard field names
+		switch property {
+		case "stat":
+			property = "status"
+		case "prio":
+			property = "priority"
+		case "tag":
+			property = "tags"
+		case "meta":
+			property = "metadata"
+		case "desc":
+			property = "description"
+		}
+
+		updates[property] = value
+	}
+
+	// Apply updates
+	fmt.Printf("🔄 Updating task %d...\n", taskID)
+	if err := taskManager.UpdateTaskMultiple(taskID, updates); err != nil {
+		return fmt.Errorf("failed to update task: %v", err)
+	}
+
+	// Show updated task
+	updatedTask, err := taskManager.GetTask(taskID)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve updated task: %v", err)
+	}
+
+	fmt.Printf("\n✅ Task updated successfully!\n")
+	fmt.Printf("📝 Updated Task [%d]:\n", updatedTask.ID)
+	priorityIcon = getPriorityIcon(updatedTask.Priority)
+	statusIcon = statusIcons[updatedTask.Status]
+	fmt.Printf("%s %s %s\n", priorityIcon, statusIcon, updatedTask.Title)
+	if updatedTask.Description != "" && updatedTask.Description != updatedTask.Title {
+		fmt.Printf("Description: %s\n", updatedTask.Description)
+	}
+	fmt.Printf("Status: %s | Priority: %s\n", updatedTask.Status, updatedTask.Priority)
+	if updatedTask.Tags != "" {
+		fmt.Printf("Tags: %s\n", updatedTask.Tags)
+	}
+	fmt.Printf("Created: %s\n", updatedTask.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("Updated: %s\n", updatedTask.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+	return nil
+}
