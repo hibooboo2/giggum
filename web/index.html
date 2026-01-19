@@ -21,6 +21,10 @@
         <header class="header">
             <h1>🤖 Giggum</h1>
             <p class="subtitle">AI Agent Management System</p>
+            <nav class="main-nav">
+                <button onclick="showAgents()" class="nav-btn" id="agents-nav-btn">Agents</button>
+                <button onclick="showProjects()" class="nav-btn" id="projects-nav-btn">Projects</button>
+            </nav>
         </header>
 
         <main class="main">
@@ -63,6 +67,40 @@
                         <pre id="detail-system-prompt"></pre>
                         <h3>Task Prompt</h3>
                         <pre id="detail-task-prompt"></pre>
+                    </div>
+                </div>
+            </section>
+
+            <section class="projects" id="projects" style="display: none;">
+                <div class="projects-header">
+                    <h2>Giggum Projects</h2>
+                    <div class="header-actions">
+                        <div class="project-count" id="project-count">0 projects</div>
+                        <div class="connection-status" id="connection-status-projects" title="WebSocket connection status">
+                            <span class="status-indicator" id="status-indicator-projects">●</span>
+                        </div>
+                        <button onclick="toggleNotifications()" class="notification-btn">
+                            🔔 <span id="notification-badge-projects">0</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="project-grid" id="project-grid">
+                    <!-- Projects will be dynamically loaded here -->
+                </div>
+            </section>
+
+            <section class="project-detail" id="project-detail" style="display: none;">
+                <button onclick="backToProjects()" class="back-btn">← Back to Projects</button>
+                <div class="project-card-detail">
+                    <h2 id="project-detail-path"></h2>
+                    <div class="project-stats" id="project-stats">
+                        <!-- Project statistics will be loaded here -->
+                    </div>
+                    <div class="project-sessions">
+                        <h3>Recent Sessions</h3>
+                        <div id="project-sessions-list">
+                            <!-- Sessions will be loaded here -->
+                        </div>
                     </div>
                 </div>
             </section>

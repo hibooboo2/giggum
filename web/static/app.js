@@ -1,5 +1,6 @@
 // PWA App JavaScript
 let agents = [];
+let projects = [];
 let notifications = [];
 let isLoading = false;
 let notificationInterval = null;
@@ -12,9 +13,13 @@ const loading = document.getElementById('loading');
 const error = document.getElementById('error');
 const agentsSection = document.getElementById('agents');
 const agentDetail = document.getElementById('agent-detail');
+const projectsSection = document.getElementById('projects');
+const projectDetail = document.getElementById('project-detail');
 const notificationsPanel = document.getElementById('notifications-panel');
 const agentGrid = document.getElementById('agent-grid');
+const projectGrid = document.getElementById('project-grid');
 const agentCount = document.getElementById('agent-count');
+const projectCount = document.getElementById('project-count');
 const errorMessage = document.getElementById('error-message');
 const notificationBadge = document.getElementById('notification-badge');
 const notificationsList = document.getElementById('notifications-list');
@@ -398,12 +403,212 @@ function startNotificationPolling() {
     }, 30000);
 }
 
+// Show projects view
+async function showProjectsView() {
+    if (isLoading) return;
+    
+    isLoading = true;
+    showLoading();
+    
+    try {
+        const response = await fetch('/api/projects');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        projects = data.projects || [];
+        
+        if (projects.length === 0) {
+            showError('No projects found');
+            return;
+        }
+        
+        displayProjects(projects);
+        
+    } catch (err) {
+        console.error('Failed to load projects:', err);
+        showError(`Failed to load projects: ${err.message}`);
+    } finally {
+        isLoading = false;
+    }
+}
+
+// Display projects list
+function displayProjects(projectList) {
+    hideAllSections();
+    projectCount.textContent = `${projectList.length} projects`;
+    
+    // Clear existing grid
+    projectGrid.innerHTML = '';
+    
+    // Create project cards
+    projectList.forEach(project => {
+        const card = createProjectCard(project);
+        projectGrid.appendChild(card);
+    });
+    
+    projectsSection.style.display = 'block';
+    updateActiveNav('projects');
+}
+
+// Create project card element
+function createProjectCard(project) {
+    const card = document.createElement('div');
+    card.className = 'project-card';
+    card.onclick = () => showProjectDetail(project);
+    
+    const path = document.createElement('div');
+    path.className = 'project-path';
+    path.textContent = project.project_path;
+    
+    const stats = document.createElement('div');
+    stats.className = 'project-stats-card';
+    stats.innerHTML = `
+        <div class="stat-item">
+            <span class="stat-label">Sessions:</span>
+            <span class="stat-value">${project.total_sessions}</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-label">Last seen:</span>
+            <span class="stat-value">${formatDate(project.last_seen)}</span>
+        </div>
+    `;
+    
+    card.appendChild(path);
+    card.appendChild(stats);
+    
+    return card;
+}
+
+// Show project detail
+async function showProjectDetail(project) {
+    try {
+        // Load detailed project information
+        const encodedPath = encodeURIComponent(project.project_path);
+        const response = await fetch(`/api/projects/${encodedPath}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const detailData = await response.json();
+        
+        // Update detail view
+        const projectInfo = detailData.project;
+        document.getElementById('project-detail-path').textContent = projectInfo.project_path;
+        
+        // Display project statistics
+        const statsContainer = document.getElementById('project-stats');
+        statsContainer.innerHTML = `
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <h4>Total Sessions</h4>
+                    <p>${projectInfo.total_sessions}</p>
+                </div>
+                <div class="stat-box">
+                    <h4>First Seen</h4>
+                    <p>${formatDate(projectInfo.first_seen)}</p>
+                </div>
+                <div class="stat-box">
+                    <h4>Last Seen</h4>
+                    <p>${formatDate(projectInfo.last_seen)}</p>
+                </div>
+            </div>
+        `;
+        
+        // Display recent sessions
+        const sessionsContainer = document.getElementById('project-sessions-list');
+        if (projectInfo.recent_sessions && projectInfo.recent_sessions.length > 0) {
+            sessionsContainer.innerHTML = '';
+            projectInfo.recent_sessions.forEach(session => {
+                const sessionItem = createSessionItem(session);
+                sessionsContainer.appendChild(sessionItem);
+            });
+        } else {
+            sessionsContainer.innerHTML = '<p style="text-align: center; color: #64748b; padding: 1rem;">No recent sessions</p>';
+        }
+        
+        hideAllSections();
+        projectDetail.style.display = 'block';
+        
+    } catch (err) {
+        console.error('Failed to load project details:', err);
+        showError(`Failed to load project details: ${err.message}`);
+    }
+}
+
+// Create session item element
+function createSessionItem(session) {
+    const item = document.createElement('div');
+    item.className = 'session-item';
+    
+    const header = document.createElement('div');
+    header.className = 'session-header';
+    header.innerHTML = `
+        <span class="session-agent">${session.agent_type}</span>
+        <span class="session-status ${session.status}">${session.status}</span>
+    `;
+    
+    const times = document.createElement('div');
+    times.className = 'session-times';
+    times.innerHTML = `
+        <div>Started: ${formatDate(session.start_time)}</div>
+        ${session.end_time ? `<div>Ended: ${formatDate(session.end_time)}</div>` : '<div>Active</div>'}
+    `;
+    
+    item.appendChild(header);
+    item.appendChild(times);
+    
+    return item;
+}
+
+// Format date helper function
+function formatDate(dateString) {
+    if (!dateString) return 'Unknown';
+    const date = new Date(dateString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+}
+
+// Navigation functions
+function showAgents() {
+    showAgents(agents);
+}
+
+function showProjects() {
+    showProjectsView();
+}
+
+function backToProjects() {
+    showProjectsView();
+}
+
+// Update active navigation state
+function updateActiveNav(activeSection) {
+    const agentsBtn = document.getElementById('agents-nav-btn');
+    const projectsBtn = document.getElementById('projects-nav-btn');
+    
+    // Remove active class from all buttons
+    agentsBtn.classList.remove('active');
+    projectsBtn.classList.remove('active');
+    
+    // Add active class to current button
+    if (activeSection === 'agents') {
+        agentsBtn.classList.add('active');
+    } else if (activeSection === 'projects') {
+        projectsBtn.classList.add('active');
+    }
+}
+
 // Hide all sections
 function hideAllSections() {
     loading.style.display = 'none';
     error.style.display = 'none';
     agentsSection.style.display = 'none';
     agentDetail.style.display = 'none';
+    projectsSection.style.display = 'none';
+    projectDetail.style.display = 'none';
     // Don't hide notifications panel here as it should be toggleable
 }
 

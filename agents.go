@@ -56,6 +56,28 @@ type AgentProgress struct {
 	Timestamp   time.Time `json:"timestamp"`
 }
 
+// ProjectMetadata represents metadata for a project
+type ProjectMetadata struct {
+	ID            int64     `json:"id"`
+	ProjectPath   string    `json:"project_path"`
+	FirstSeen     time.Time `json:"first_seen"`
+	LastSeen      time.Time `json:"last_seen"`
+	TotalSessions int       `json:"total_sessions"`
+	Metadata      string    `json:"metadata,omitempty"`
+}
+
+// ProjectDetails represents detailed information about a project
+type ProjectDetails struct {
+	ID             int64                  `json:"id"`
+	ProjectPath    string                 `json:"project_path"`
+	FirstSeen      time.Time              `json:"first_seen"`
+	LastSeen       time.Time              `json:"last_seen"`
+	TotalSessions  int                    `json:"total_sessions"`
+	Metadata       string                 `json:"metadata,omitempty"`
+	RecentSessions []AgentSession         `json:"recent_sessions"`
+	Stats          map[string]interface{} `json:"stats"`
+}
+
 // GetAgentPrompts returns the predefined prompts for all agent types
 func GetAgentPrompts() map[AgentType]AgentPrompt {
 	return map[AgentType]AgentPrompt{

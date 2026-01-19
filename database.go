@@ -567,3 +567,138 @@ func (m *DBManager) InitializeDefaultPrompts() error {
 
 	return nil
 }
+
+// GetAllProjects retrieves all projects with their metadata
+func (m *DBManager) GetAllProjects() ([]ProjectMetadata, error) {
+	query := `
+	SELECT id, project_path, first_seen, last_seen, total_sessions, metadata
+	FROM project_metadata
+	ORDER BY last_seen DESC`
+
+	rows, err := m.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query projects: %v", err)
+	}
+	defer rows.Close()
+
+	var projects []ProjectMetadata
+	for rows.Next() {
+		var p ProjectMetadata
+		var firstSeenStr, lastSeenStr string
+		var metadata sql.NullString
+
+		err := rows.Scan(&p.ID, &p.ProjectPath, &firstSeenStr, &lastSeenStr, &p.TotalSessions, &metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan project row: %v", err)
+		}
+
+		// Parse timestamps
+		if firstSeenStr != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", firstSeenStr); err == nil {
+				p.FirstSeen = t
+			}
+		}
+
+		if lastSeenStr != "" {
+			if t, err := time.Parse("2006-01-02 15:04:05", lastSeenStr); err == nil {
+				p.LastSeen = t
+			}
+		}
+
+		if metadata.Valid {
+			p.Metadata = metadata.String
+		}
+
+		projects = append(projects, p)
+	}
+
+	return projects, rows.Err()
+}
+
+// GetProjectDetails retrieves detailed information about a specific project
+func (m *DBManager) GetProjectDetails(projectPath string) (*ProjectDetails, error) {
+	// Get project metadata
+	metadataQuery := `
+	SELECT id, project_path, first_seen, last_seen, total_sessions, metadata
+	FROM project_metadata
+	WHERE project_path = ?`
+
+	var details ProjectDetails
+	var firstSeenStr, lastSeenStr string
+	var metadata sql.NullString
+
+	err := m.db.QueryRow(metadataQuery, projectPath).Scan(
+		&details.ID, &details.ProjectPath, &firstSeenStr, &lastSeenStr, &details.TotalSessions, &metadata)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("project not found: %s", projectPath)
+		}
+		return nil, fmt.Errorf("failed to query project metadata: %v", err)
+	}
+
+	// Parse timestamps
+	if firstSeenStr != "" {
+		if t, err := time.Parse("2006-01-02 15:04:05", firstSeenStr); err == nil {
+			details.FirstSeen = t
+		}
+	}
+
+	if lastSeenStr != "" {
+		if t, err := time.Parse("2006-01-02 15:04:05", lastSeenStr); err == nil {
+			details.LastSeen = t
+		}
+	}
+
+	if metadata.Valid {
+		details.Metadata = metadata.String
+	}
+
+	// Get sessions for this project
+	sessionsQuery := `
+	SELECT id, agent_type, start_time, end_time, status
+	FROM agent_sessions
+	WHERE project_path = ?
+	ORDER BY start_time DESC
+	LIMIT 10` // Limit to recent sessions
+
+	sessionRows, err := m.db.Query(sessionsQuery, projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query project sessions: %v", err)
+	}
+	defer sessionRows.Close()
+
+	for sessionRows.Next() {
+		var session AgentSession
+		var startTimeStr, endTimeStr sql.NullString
+
+		err := sessionRows.Scan(&session.ID, &session.AgentType, &startTimeStr, &endTimeStr, &session.Status)
+		if err != nil {
+			continue
+		}
+
+		session.ProjectPath = projectPath
+
+		// Parse timestamps
+		if startTimeStr.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", startTimeStr.String); err == nil {
+				session.StartTime = t
+			}
+		}
+
+		if endTimeStr.Valid {
+			if t, err := time.Parse("2006-01-02 15:04:05", endTimeStr.String); err == nil {
+				session.EndTime = &t
+			}
+		}
+
+		details.RecentSessions = append(details.RecentSessions, session)
+	}
+
+	// Get progress summary
+	stats, err := m.GetProjectStats(projectPath)
+	if err == nil {
+		details.Stats = stats
+	}
+
+	return &details, nil
+}

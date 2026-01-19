@@ -85,6 +85,8 @@ func (ws *WebServer) Start() error {
 		api.GET("/agents/:type", ws.getAgent)
 		api.POST("/notify", ws.sendNotification)
 		api.GET("/notifications", ws.getNotifications)
+		api.GET("/projects", ws.listProjects)
+		api.GET("/projects/:path", ws.getProjectDetails)
 	}
 
 	// Health check endpoint
@@ -212,6 +214,61 @@ func (ws *WebServer) sendNotification(c *gin.Context) {
 
 	// Broadcast the new notification to all connected WebSocket clients
 	ws.broadcastNotification(notification)
+}
+
+// listProjects returns all available projects
+func (ws *WebServer) listProjects(c *gin.Context) {
+	// Get the global database manager
+	dbPath := GetGlobalDBPath()
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to connect to database: %v", err),
+		})
+		return
+	}
+	defer dbManager.Close()
+
+	projects, err := dbManager.GetAllProjects()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to get projects: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"projects": projects,
+		"count":    len(projects),
+	})
+}
+
+// getProjectDetails returns details for a specific project
+func (ws *WebServer) getProjectDetails(c *gin.Context) {
+	projectPath := c.Param("path")
+
+	// Get the global database manager
+	dbPath := GetGlobalDBPath()
+	dbManager, err := NewDBManager(dbPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Failed to connect to database: %v", err),
+		})
+		return
+	}
+	defer dbManager.Close()
+
+	projectDetails, err := dbManager.GetProjectDetails(projectPath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": fmt.Sprintf("Project not found: %v", err),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"project": projectDetails,
+	})
 }
 
 // handleWebSocket handles WebSocket connections for real-time notifications
