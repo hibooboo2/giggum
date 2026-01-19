@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,7 @@ type Logger struct {
 // Config holds the configuration for the Ralph Wiggum loop
 type Config struct {
 	PromptCommand string `json:"prompt_command"`
+	WebhookURL    string `json:"webhook_url"`
 	// Future configuration options can be added here
 }
 
@@ -131,6 +133,41 @@ func loadConfig(logger *Logger) (*Config, error) {
 	logger.Debug("Loaded configuration from '%s'", configFile)
 
 	return &config, nil
+}
+
+// sendWebhookNotification sends a notification to the configured webhook URL
+func sendWebhookNotification(logger *Logger, webhookURL string, iterations int, completed bool) error {
+	if webhookURL == "" {
+		logger.Debug("No webhook URL configured, skipping notification")
+		return nil
+	}
+
+	// Prepare webhook payload
+	payload := map[string]interface{}{
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"iterations": iterations,
+		"completed":  completed,
+		"message":    "Ralph Wiggum execution completed",
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %v", err)
+	}
+
+	// Send HTTP POST request
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return fmt.Errorf("failed to send webhook: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("webhook returned status code: %d", resp.StatusCode)
+	}
+
+	logger.Info("Webhook notification sent successfully to %s", webhookURL)
+	return nil
 }
 
 func main() {
@@ -269,8 +306,17 @@ func main() {
 		output := outputBuffer.String()
 		if strings.Contains(output, "✅ Complete ✅") {
 			fmt.Println("✅ All tasks completed!")
+			// Send webhook notification for early completion
+			if err := sendWebhookNotification(logger, config.WebhookURL, i, true); err != nil {
+				logger.Warn("Failed to send webhook notification: %v", err)
+			}
 			os.Exit(0)
 		}
+	}
+
+	// Send webhook notification after completing all iterations
+	if err := sendWebhookNotification(logger, config.WebhookURL, iterations, false); err != nil {
+		logger.Warn("Failed to send webhook notification: %v", err)
 	}
 }
 

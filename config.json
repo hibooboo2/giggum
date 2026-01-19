@@ -1,3 +1,4 @@
 {
-    "prompt_command": "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md"
+    "prompt_command": "@tasks.md @progress.txt @prompt.md execute the prompt in prompt.md @tasks.md @progress.txt @prompt.md execute the prompt in prompt.md",
+    "webhook_url": ""
 }
