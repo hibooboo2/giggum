@@ -1,15 +1,4 @@
-# Ralph Wiggum Implementation Tasks
-
-This folder implements a Ralph Wiggum autonomous AI coding loop. Current tasks to complete:
-
-## BUG FIXES
-
-## High Priority Tasks
-
-## Medium Priority Tasks  
+- There is code that was remove recently in the history that added functionality. It is currently uncalled code in the please recover this functionality including the ability to when passing -v print the colorized normal output of opencode as it executes as well as inspect it. do not call open code multiple times in one loop. If opencode is called use -v to make the std err and out go to normal as well as a tee reader so that ralph can inspect the output without running it two times. If -debug is passed then add --print logs to the opencode command
 
 
-## Low Priority Tasks
-
-## Last task
-- [x] Ensure all code is simple. Make sure usage and commands from cli for ralph.go does not require anything to use easily.
+- progress text is not required if it is not present create one.

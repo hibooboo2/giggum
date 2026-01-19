@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -136,17 +138,24 @@ func main() {
 	var help bool
 	var iterations int
 	var verbose bool
+	var debug bool
 
 	flag.BoolVar(&help, "h", false, "Show help message")
 	flag.BoolVar(&help, "help", false, "Show help message")
 	flag.IntVar(&iterations, "n", 10, "Number of iterations to run")
 	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
+	flag.BoolVar(&debug, "debug", false, "Enable debug output (implies -v)")
 	flag.Parse()
 
 	// Show help if requested
 	if help {
 		showHelp()
 		return
+	}
+
+	// Debug implies verbose
+	if debug {
+		verbose = true
 	}
 
 	// Validate opencode CLI exists
@@ -186,19 +195,28 @@ func main() {
 	for i := 1; i <= iterations; i++ {
 		fmt.Printf("Running iteration %d/%d...\n", i, iterations)
 
-		// Build and run the opencode command
-		args := []string{"run", "--model", "opencode/big-pickle", config.PromptCommand}
+		// Build the opencode command
+		args := []string{"run", "--model", "opencode/big-pickle"}
+		if debug {
+			args = append(args, "--print-logs")
+		}
+		args = append(args, config.PromptCommand)
 		cmd := exec.Command("opencode", args...)
 		cmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
 
+		// Set up output capture for tee reader functionality
+		var outputBuffer bytes.Buffer
+		var writer io.Writer = &outputBuffer
+
 		if verbose {
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-		} else {
-			cmd.Stdout = os.Stderr
-			cmd.Stderr = os.Stderr
+			// Use MultiWriter to capture output while displaying it
+			writer = io.MultiWriter(&outputBuffer, os.Stdout)
 		}
 
+		cmd.Stdout = writer
+		cmd.Stderr = writer
+
+		// Run the command
 		err := cmd.Run()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error in iteration %d: %v\n", i, err)
@@ -208,12 +226,9 @@ func main() {
 			continue
 		}
 
-		// Check for completion
-		checkCmd := exec.Command("opencode", "run", "--model", "opencode/big-pickle", config.PromptCommand)
-		checkCmd.Env = append(os.Environ(), "OPENAI_BASE_URL=http://100.83.162.29:1234")
-		output, _ := checkCmd.CombinedOutput()
-
-		if strings.Contains(string(output), "✅ Complete ✅") {
+		// Check for completion from captured output
+		output := outputBuffer.String()
+		if strings.Contains(output, "✅ Complete ✅") {
 			fmt.Println("✅ All tasks completed!")
 			os.Exit(0)
 		}
@@ -347,13 +362,15 @@ USAGE:
 
 OPTIONS:
     -h, --help      Show this help message
-    -v              Enable verbose output
+    -v              Enable verbose output (shows colorized opencode output)
+    -debug          Enable debug output (implies -v, adds --print-logs to opencode)
     -n N            Number of iterations to run (default: 10)
 
 EXAMPLES:
     ralph           # Run 10 iterations
     ralph 5         # Run 5 iterations  
     ralph -n 20 -v  # Run 20 iterations with verbose output
+    ralph -debug    # Run with debug output (shows opencode logs)
     ralph -h        # Show this help
 
 REQUIRED FILES:
