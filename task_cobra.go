@@ -94,6 +94,44 @@ var taskStatsCmd = &cobra.Command{
 	},
 }
 
+// Flags for padd command
+var (
+	paddTitle       string
+	paddDescription string
+	paddStatus      string
+	paddPriority    string
+	paddTags        string
+	paddMetadata    string
+)
+
+var taskPaddCmd = &cobra.Command{
+	Use:   "padd --title <title> --description <description> [flags]",
+	Short: "Add a task using flags (fast alternative to 'add')",
+	Long: `Add a task by specifying fields directly with flags instead of AI parsing.
+This is much faster than 'task add' which uses LLM analysis.
+
+Required flags:
+  --title, -t       Task title
+  --description, -d Task description
+
+Optional flags:
+  --status, -s       Task status (default: pending)
+  --priority, -p     Task priority (default: medium)
+  --tags, -g         Comma-separated tags
+  --metadata, -m     JSON metadata string
+
+Examples:
+  giggum task padd -t "Fix login bug" -d "Users cannot login with valid credentials"
+  giggum task padd -t "Update docs" -d "Add API documentation" -p high -s "in_progress"
+  giggum task padd -t "Database cleanup" -d "Remove old records" -g "database,maintenance" -m '{"deadline":"2024-12-31"}'`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := addTaskFromFlags(taskManager); err != nil {
+			fmt.Fprintf(os.Stderr, "Error adding task: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
 var taskExecuteCmd = &cobra.Command{
 	Use:   "execute <taskID>",
 	Short: "Execute a task with the best suited agent",
@@ -182,8 +220,21 @@ func init() {
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskCreateCmd)
 	taskCmd.AddCommand(taskAddCmd)
+	taskCmd.AddCommand(taskPaddCmd)
 	taskCmd.AddCommand(taskRemoveCmd)
 	taskCmd.AddCommand(taskSetCmd)
 	taskCmd.AddCommand(taskStatsCmd)
 	taskCmd.AddCommand(taskExecuteCmd)
+
+	// Add flags for padd command
+	taskPaddCmd.Flags().StringVarP(&paddTitle, "title", "t", "", "Task title (required)")
+	taskPaddCmd.Flags().StringVarP(&paddDescription, "description", "d", "", "Task description (required)")
+	taskPaddCmd.Flags().StringVarP(&paddStatus, "status", "s", "pending", "Task status (pending, in_progress, completed, cancelled)")
+	taskPaddCmd.Flags().StringVarP(&paddPriority, "priority", "p", "medium", "Task priority (high, medium, low)")
+	taskPaddCmd.Flags().StringVarP(&paddTags, "tags", "g", "", "Comma-separated tags")
+	taskPaddCmd.Flags().StringVarP(&paddMetadata, "metadata", "m", "", "JSON metadata string")
+
+	// Mark required flags
+	taskPaddCmd.MarkFlagRequired("title")
+	taskPaddCmd.MarkFlagRequired("description")
 }

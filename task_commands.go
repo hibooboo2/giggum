@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -538,6 +539,76 @@ func setTaskProperties(taskManager *TaskManager) error {
 
 func setTaskFromCobraArgs(taskManager *TaskManager, args []string) error {
 	return setTaskFromArgs(taskManager, args)
+}
+
+func addTaskFromFlags(taskManager *TaskManager) error {
+	// Validate required fields
+	if paddTitle == "" {
+		return fmt.Errorf("title is required. Use --title or -t flag")
+	}
+	if paddDescription == "" {
+		return fmt.Errorf("description is required. Use --description or -d flag")
+	}
+
+	// Validate status
+	validStatuses := map[string]bool{
+		"pending":     true,
+		"in_progress": true,
+		"completed":   true,
+		"cancelled":   true,
+	}
+	if !validStatuses[paddStatus] {
+		return fmt.Errorf("invalid status '%s'. Valid values: pending, in_progress, completed, cancelled", paddStatus)
+	}
+
+	// Validate priority
+	validPriorities := map[string]bool{
+		"high":   true,
+		"medium": true,
+		"low":    true,
+	}
+	if !validPriorities[paddPriority] {
+		return fmt.Errorf("invalid priority '%s'. Valid values: high, medium, low", paddPriority)
+	}
+
+	// Validate metadata is valid JSON if provided
+	if paddMetadata != "" {
+		if !json.Valid([]byte(paddMetadata)) {
+			return fmt.Errorf("metadata must be valid JSON. Got: %s", paddMetadata)
+		}
+	}
+
+	// Create the task
+	task, err := taskManager.CreateTaskWithStatus(paddTitle, paddDescription, paddPriority, paddStatus)
+	if err != nil {
+		return fmt.Errorf("failed to create task: %v", err)
+	}
+
+	// Update tags and metadata if provided
+	if paddTags != "" || paddMetadata != "" {
+		if err := taskManager.UpdateTaskMetadata(task.ID, paddTags, paddMetadata); err != nil {
+			fmt.Printf("Warning: failed to save tags/metadata: %v\n", err)
+		} else {
+			// Refresh the task to get updated values
+			task, _ = taskManager.GetTask(task.ID)
+		}
+	}
+
+	// Display the created task
+	fmt.Printf("\n✅ Task created successfully!\n")
+	fmt.Printf("📋 ID: %d\n", task.ID)
+	fmt.Printf("📝 Title: %s\n", task.Title)
+	if task.Description != "" {
+		fmt.Printf("📄 Description: %s\n", task.Description)
+	}
+	fmt.Printf("🎯 Priority: %s\n", task.Priority)
+	fmt.Printf("📊 Status: %s\n", task.Status)
+	fmt.Printf("📅 Created: %s\n", task.CreatedAt.Format("2006-01-02 15:04:05"))
+	if task.Tags != "" {
+		fmt.Printf("🏷️  Tags: %s\n", task.Tags)
+	}
+
+	return nil
 }
 
 func setTaskFromArgs(taskManager *TaskManager, args []string) error {
