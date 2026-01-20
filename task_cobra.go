@@ -152,9 +152,25 @@ The system will analyze the task content and choose the most appropriate agent t
 			os.Exit(1)
 		}
 
+		// Initialize Discord service
+		discordService, err := NewDiscordService(config.Discord, logger, taskManager)
+		if err != nil {
+			logger.Warn("Failed to initialize Discord service: %v", err)
+		}
+		defer func() {
+			if discordService != nil {
+				discordService.Close()
+			}
+		}()
+
 		// Send webhook notification after completing task
 		if webhookErr := sendWebhookNotification(logger, config, 1, true); webhookErr != nil {
 			logger.Warn("Failed to send webhook notification: %v", webhookErr)
+		}
+
+		// Send Discord notification after completing task
+		if discordErr := sendDiscordNotification(logger, config, 1, true, discordService); discordErr != nil {
+			logger.Warn("Failed to send Discord notification: %v", discordErr)
 		}
 
 		fmt.Printf("Task %d executed successfully.\n", taskID)

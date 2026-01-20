@@ -17,7 +17,36 @@ type Config struct {
 	AgentType    AgentType `json:"agent_type"`
 	UseAgents    bool      `json:"use_agents"`    // DEPRECATED: Always true for agent-only execution
 	AgentTimeout int       `json:"agent_timeout"` // Timeout in minutes for agent execution (default: 30)
-	// Future configuration options can be added here
+
+	// Discord integration configuration
+	Discord DiscordConfig `json:"discord"`
+}
+
+// DiscordConfig holds Discord-specific configuration for notifications and bot integration
+type DiscordConfig struct {
+	// Bot token for Discord API authentication
+	BotToken string `json:"bot_token"`
+
+	// Webhook URL for Discord notifications (alternative to bot token)
+	WebhookURL string `json:"webhook_url"`
+
+	// Channel ID where notifications should be sent
+	ChannelID string `json:"channel_id"`
+
+	// Enable Discord notifications
+	Enabled bool `json:"enabled"`
+
+	// Parse Discord responses and convert to tasks
+	ParseResponses bool `json:"parse_responses"`
+
+	// Command prefix for bot commands (e.g., "!giggum")
+	CommandPrefix string `json:"command_prefix"`
+
+	// Enable rate limiting to avoid hitting Discord API limits
+	RateLimitEnabled bool `json:"rate_limit_enabled"`
+
+	// Maximum messages per minute when rate limiting is enabled
+	MaxMessagesPerMinute int `json:"max_messages_per_minute"`
 }
 
 // loadConfig loads configuration from config.json file, returns default config if file doesn't exist
@@ -34,6 +63,13 @@ func loadConfig(logger *Logger) (Config, error) {
 			UseAgents:    true,             // Agent-only execution enforced
 			AgentType:    BackendDeveloper, // Default to BackendDeveloper
 			AgentTimeout: 30,               // Default 30 minutes timeout
+			Discord: DiscordConfig{
+				Enabled:              false,
+				ParseResponses:       false,
+				CommandPrefix:        "!giggum",
+				RateLimitEnabled:     true,
+				MaxMessagesPerMinute: 30,
+			},
 		}, nil
 	}
 

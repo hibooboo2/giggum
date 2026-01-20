@@ -53,8 +53,19 @@ The system will analyze pending tasks and assign them to the most appropriate ag
 			config.AgentTimeout = timeout
 		}
 
+		// Initialize Discord service
+		discordService, err := NewDiscordService(config.Discord, logger, taskManager)
+		if err != nil {
+			logger.Warn("Failed to initialize Discord service: %v", err)
+		}
+		defer func() {
+			if discordService != nil {
+				discordService.Close()
+			}
+		}()
+
 		// Run multi-agent session
-		if err := runMultiAgentSession(logger, config, iterations, debug); err != nil {
+		if err := runMultiAgentSession(logger, config, iterations, debug, discordService); err != nil {
 			fmt.Fprintf(os.Stderr, "Error in multi-agent session: %v\n", err)
 			os.Exit(1)
 		}

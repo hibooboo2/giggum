@@ -119,12 +119,28 @@ func executeMain() {
 		}
 	}
 
+	// Initialize Discord service
+	discordService, err := NewDiscordService(config.Discord, logger, taskManager)
+	if err != nil {
+		logger.Warn("Failed to initialize Discord service: %v", err)
+	}
+	defer func() {
+		if discordService != nil {
+			discordService.Close()
+		}
+	}()
+
 	// Run iterations
-	runIterations(logger, config, iterations, debug)
+	runIterations(logger, config, iterations, debug, discordService)
 
 	// Send webhook notification after completing all iterations
 	if err := sendWebhookNotification(logger, config, iterations, true); err != nil {
 		logger.Warn("Failed to send webhook notification: %v", err)
+	}
+
+	// Send Discord notification after completing all iterations
+	if err := sendDiscordNotification(logger, config, iterations, true, discordService); err != nil {
+		logger.Warn("Failed to send Discord notification: %v", err)
 	}
 }
 

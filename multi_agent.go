@@ -162,7 +162,7 @@ func executeTaskWithAgent(logger *Logger, config Config, task Task, debug bool) 
 }
 
 // runMultiAgentSession coordinates multiple agents to work on tasks
-func runMultiAgentSession(logger *Logger, config Config, iterations int, debug bool) error {
+func runMultiAgentSession(logger *Logger, config Config, iterations int, debug bool, discordService *DiscordService) error {
 	tasks, err := taskManager.GetAllTasks()
 	if err != nil {
 		return fmt.Errorf("failed to get tasks: %w", err)
@@ -190,6 +190,9 @@ func runMultiAgentSession(logger *Logger, config Config, iterations int, debug b
 
 		if webhookErr := sendWebhookNotification(logger, config, i, true); webhookErr != nil {
 			logger.Warn("Failed to send webhook notification: %v", webhookErr)
+		}
+		if discordErr := sendDiscordNotification(logger, config, i, true, discordService); discordErr != nil {
+			logger.Warn("Failed to send Discord notification: %v", discordErr)
 		}
 	}
 

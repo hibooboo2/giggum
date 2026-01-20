@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-func runIterations(logger *Logger, config Config, iterations int, debug bool) {
+func runIterations(logger *Logger, config Config, iterations int, debug bool, discordService *DiscordService) {
 	// Agent-only execution - validate agent type exists
 	if config.AgentType == "" {
 		config.AgentType = BackendDeveloper
@@ -22,6 +22,10 @@ func runIterations(logger *Logger, config Config, iterations int, debug bool) {
 				// Send webhook notification for early completion
 				if webhookErr := sendWebhookNotification(logger, config, i, true); webhookErr != nil {
 					logger.Warn("Failed to send webhook notification: %v", webhookErr)
+				}
+				// Send Discord notification for early completion
+				if discordErr := sendDiscordNotification(logger, config, i, true, discordService); discordErr != nil {
+					logger.Warn("Failed to send Discord notification: %v", discordErr)
 				}
 				return // Exit early since tasks are complete
 			}

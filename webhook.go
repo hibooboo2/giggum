@@ -194,3 +194,21 @@ func sendWebhookNotification(logger *Logger, config Config, iterations int, comp
 	}
 	return nil
 }
+
+// sendDiscordNotification sends a notification to Discord using the Discord service
+func sendDiscordNotification(logger *Logger, config Config, iterations int, completed bool, discordService *DiscordService) error {
+	if discordService == nil || !config.Discord.Enabled {
+		logger.Debug("Discord service not available or disabled, skipping Discord notification")
+		return nil
+	}
+
+	title := "Ralph Wiggum Execution"
+	message := fmt.Sprintf("Execution completed with %d iterations", iterations)
+	if completed {
+		message = "Execution completed successfully"
+	} else {
+		message = "Execution in progress"
+	}
+
+	return discordService.SendNotification(title, message, iterations, completed)
+}
